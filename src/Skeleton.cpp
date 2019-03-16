@@ -81,7 +81,7 @@ class KochanekBartels
 
   protected:
 	const float t;
-	const int resolution = 100;
+	const int resolution = 4;
 
   public:
 	KochanekBartels(float tension = 0.0, float start = 0.0f) : t(tension)
@@ -109,6 +109,11 @@ class KochanekBartels
 		float currY = c_points.front().y;
 		for(auto it = c_points.begin(); it+1 != c_points.end(); it++)
 		{
+			if(currX >= (it+1)->x)
+			{
+				data.push_back(it->x);	
+				data.push_back(currY = it->y);	
+			}
 			while(currX < (it + 1)->x)
 			{
 				if(fabs(currX - it->x)<EPS)
@@ -118,7 +123,7 @@ class KochanekBartels
 				}
 				else
 				{
-					float a3 = (v(it+1)+v(it))/((it+1)->x - it->x)/((it+1)->x - it->x) - ((it+1)->y - it->y)*2.0f/((it+1)->x - it->x)/((it+1)->x - it->x)/((it+1)->x - it->x); 
+					float a3 = (v(it+1)+v(it))/((it+1)->x - it->x)/((it+1)->x - it->x) + (it->y - (it+1)->y)*2.0f/((it+1)->x - it->x)/((it+1)->x - it->x)/((it+1)->x - it->x); 
 					float a2 = ((it+1)->y - it->y)*3.0f/((it+1)->x - it->x)/((it+1)->x - it->x) - (v(it+1)+2*v(it))/((it+1)->x - it->x);
 					float a1 = v(it);
 					float a0 = it->y;
