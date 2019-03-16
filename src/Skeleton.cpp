@@ -1,5 +1,5 @@
 //=============================================================================================
-// Mintaprogram: Z�ld h�romsz�g. Ervenyes 2018. osztol.
+// Mintaprogram: Zold haromszog. Ervenyes 2018. osztol.
 //
 // A beadott program csak ebben a fajlban lehet, a fajl 1 byte-os ASCII karaktereket tartalmazhat, BOM kihuzando.
 // Tilos:
@@ -18,8 +18,8 @@
 //
 // NYILATKOZAT
 // ---------------------------------------------------------------------------------------------
-// Nev    : 
-// Neptun : 
+// Nev    : Bajczi Levente
+// Neptun : XAO5ER
 // ---------------------------------------------------------------------------------------------
 // ezennel kijelentem, hogy a feladatot magam keszitettem, es ha barmilyen segitseget igenybe vettem vagy
 // mas szellemi termeket felhasznaltam, akkor a forrast es az atvett reszt kommentekben egyertelmuen jeloltem.
@@ -32,8 +32,7 @@
 // negativ elojellel szamoljak el es ezzel parhuzamosan eljaras is indul velem szemben.
 //=============================================================================================
 #include "framework.h"
-
-// vertex shader in GLSL: It is a Raw string (C++11) since it contains new line characters
+#define EPS 1E-7
 const char * const vertexSource = R"(
 	#version 330				// Shader 3.3
 	precision highp float;		// normal floats, makes no difference on desktop computers
@@ -46,7 +45,6 @@ const char * const vertexSource = R"(
 	}
 )";
 
-// fragment shader in GLSL
 const char * const fragmentSource = R"(
 	#version 330			// Shader 3.3
 	precision highp float;	// normal floats, makes no difference on desktop computers
@@ -55,99 +53,181 @@ const char * const fragmentSource = R"(
 	out vec4 outColor;		// computed color of the current pixel
 
 	void main() {
-		outColor = vec4(0, 1, 0, 1);	// computed color is the color of the primitive
+		outColor = vec4(color, 1);	// computed color is the color of the primitive
 	}
 )";
 
-GPUProgram gpuProgram; // vertex and fragment shaders
-unsigned int vao;	   // virtual world on the GPU
+GPUProgram gpuProgram;
 
-// Initialization, create an OpenGL context
-void onInitialization() {
-	glViewport(0, 0, windowWidth, windowHeight);
+class KochanekBartels
+{
+  private:
+	std::vector<float> data;
+	std::vector<vec2> c_points;
+	unsigned int vbo;
+	unsigned int vao;
 
-	glGenVertexArrays(1, &vao);	// get 1 vao id
-	glBindVertexArray(vao);		// make it active
+	float v(std::vector<vec2>::iterator it)
+	{
+		if(it == c_points.begin() || it+1 == c_points.end())
+			return 0.0f;
+		float dx1 = it->x - (it-1)->x;	
+		float dy1 = it->y - (it-1)->y;	
+		float dx2 = (it+1)->x - it->x;	
+		float dy2 = (it+1)->y - it->y;	
+		return (1.0f - t) / 2.0f * (dy1/dx1 + dy2/dx2);
+	}
+	float color[3] = {0, 0, 0};
 
-	unsigned int vbo;		// vertex buffer object
-	glGenBuffers(1, &vbo);	// Generate 1 buffer
-	glBindBuffer(GL_ARRAY_BUFFER, vbo);
-	// Geometry with 24 bytes (6 floats or 3 x 2 coordinates)
-	float vertices[] = { -0.8f, -0.8f, -0.6f, 1.0f, 0.8f, -0.2f };
-	glBufferData(GL_ARRAY_BUFFER, 	// Copy to GPU target
-		sizeof(vertices),  // # bytes
-		vertices,	      	// address
-		GL_STATIC_DRAW);	// we do not change later
+  protected:
+	const float t;
+	const int resolution = 100;
 
-	glEnableVertexAttribArray(0);  // AttribArray 0
-	glVertexAttribPointer(0,       // vbo -> AttribArray 0
-		2, GL_FLOAT, GL_FALSE, // two floats/attrib, not fixed-point
-		0, NULL); 		     // stride, offset: tightly packed
+  public:
+	KochanekBartels(float tension = 0.0, float start = 0.0f) : t(tension)
+	{
+		add(vec2(-1.0f, start));
+		add(vec2(1.0f, start));
+		glGenVertexArrays(1, &vao);
+		glBindVertexArray(vao);
+		glGenBuffers(1, &vbo);
+		glBindBuffer(GL_ARRAY_BUFFER, vbo);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(data.data()), data.data(), GL_DYNAMIC_DRAW);
+		glEnableVertexAttribArray(0);  // AttribArray 0
+		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), reinterpret_cast<void*>(0)); 
+	}
+	void setColor(vec3 _color)
+	{
+		color[0] = _color.x;
+		color[1] = _color.y;
+		color[2] = _color.z;
+	}
+	void calc()
+	{
+		data.clear();
+		float currX = c_points.front().x;
+		float currY = c_points.front().y;
+		for(auto it = c_points.begin(); it+1 != c_points.end(); it++)
+		{
+			while(currX < (it + 1)->x)
+			{
+				if(fabs(currX - it->x)<EPS)
+				{
+					data.push_back(it->x);	
+					data.push_back(currY = it->y);	
+				}
+				else
+				{
+					float a3 = (v(it+1)+v(it))/((it+1)->x - it->x)/((it+1)->x - it->x) - ((it+1)->y - it->y)*2.0f/((it+1)->x - it->x)/((it+1)->x - it->x)/((it+1)->x - it->x); 
+					float a2 = ((it+1)->y - it->y)*3.0f/((it+1)->x - it->x)/((it+1)->x - it->x) - (v(it+1)+2*v(it))/((it+1)->x - it->x);
+					float a1 = v(it);
+					float a0 = it->y;
+					data.push_back(currX);
+					data.push_back(a3*(currX - it->x)*(currX - it->x)*(currX - it->x) + a2*(currX - it->x)*(currX - it->x) + a1*(currX - it->x) + a0);
+				}
+				currX+=2.0f/resolution;
+			}
+		}
+		data.push_back(c_points.back().x);
+		data.push_back(c_points.back().y);
+		glBufferData(GL_ARRAY_BUFFER, data.size() * sizeof(float), data.data(), GL_DYNAMIC_DRAW);
+	}
 
-	// create program for the GPU
-	gpuProgram.Create(vertexSource, fragmentSource, "outColor");
-}
+	void draw()
+	{
+		if(c_points.size() > 1)
+		{
+			glBindVertexArray(vao);		
+			glBindBuffer(GL_ARRAY_BUFFER, vbo);
 
-// Window has become invalid: Redraw
-void onDisplay() {
-	glClearColor(0, 0, 0, 0);     // background color
-	glClear(GL_COLOR_BUFFER_BIT); // clear frame buffer
-
-	// Set color to (0, 1, 0) = green
-	int location = glGetUniformLocation(gpuProgram.getId(), "color");
-	glUniform3f(location, 0.0f, 1.0f, 0.0f); // 3 floats
-
-	float MVPtransf[4][4] = { 1, 0, 0, 0,    // MVP matrix, 
+			glBindVertexArray(vao);
+			mat4 MVPTransform{ 1, 0, 0, 0,    // MVP matrix, 
 		                      0, 1, 0, 0,    // row-major!
 		                      0, 0, 1, 0,
 		                      0, 0, 0, 1 };
+			MVPTransform.SetUniform(gpuProgram.getId(), "MVP");
+			int location = glGetUniformLocation(gpuProgram.getId(), "color");
+			glUniform3f(location, color[0], color[1], color[2]);
+			calc();
+			printf("vbo: %d\npoints: %d\n", vbo, c_points.size());
+			glDrawArrays(GL_LINE_STRIP, 0, data.size() / 2);
+		}
+	}
+	void add(vec2 v)
+	{
+		auto it = c_points.begin();
+		for(; it != c_points.end(); ++it)
+		{
+			if(fabs((*it).x - v.x) < EPS)	// nincs uj elem beszurva, egy X-hez 1 Y tartozhat
+			{
+				(*it).y = v.y;
+				break;
+			}
+			else if((*it).x > v.x)
+			{
+				c_points.insert(it, v);
+				break;
+			}
+		}
+		if(it == c_points.end())
+			c_points.push_back(v);
+		
+	}
+};
 
-	location = glGetUniformLocation(gpuProgram.getId(), "MVP");	// Get the GPU location of uniform variable MVP
-	glUniformMatrix4fv(location, 1, GL_TRUE, &MVPtransf[0][0]);	// Load a 4x4 row-major float matrix to the specified location
+KochanekBartels* hills;
+KochanekBartels* course;
 
-	glBindVertexArray(vao);  // Draw call
-	glDrawArrays(GL_TRIANGLES, 0 /*startIdx*/, 3 /*# Elements*/);
+void onInitialization() {
+	glViewport(0, 0, windowWidth, windowHeight);
 
-	glutSwapBuffers(); // exchange buffers for double buffering
+	hills = new KochanekBartels(0.5f, 0.5f);
+	hills->setColor(vec3(1,1,0));
+	course = new KochanekBartels(-0.5f);
+	course->setColor(vec3(0,1,0));
+
+	//TODO: Create unicycle
+
+	gpuProgram.Create(vertexSource, fragmentSource, "outColor");
 }
 
-// Key of ASCII code pressed
+void onDisplay() {
+	glClearColor(0, 0, 0, 0);
+	glClear(GL_COLOR_BUFFER_BIT);
+
+	hills->draw();
+	course->draw();
+
+	//TODO: Unicycle draw
+
+	glutSwapBuffers();
+}
+
 void onKeyboard(unsigned char key, int pX, int pY) {
-	if (key == 'd') glutPostRedisplay();         // if d, invalidate display, i.e. redraw
+	if (key == ' ')
+	{
+		//TODO: move camera
+	} 
+
 }
 
-// Key of ASCII code released
 void onKeyboardUp(unsigned char key, int pX, int pY) {
 }
 
-// Move mouse with key pressed
-void onMouseMotion(int pX, int pY) {	// pX, pY are the pixel coordinates of the cursor in the coordinate system of the operation system
-	// Convert to normalized device space
-	float cX = 2.0f * pX / windowWidth - 1;	// flip y axis
-	float cY = 1.0f - 2.0f * pY / windowHeight;
-	printf("Mouse moved to (%3.2f, %3.2f)\n", cX, cY);
+void onMouseMotion(int pX, int pY) {
 }
 
-// Mouse click event
-void onMouse(int button, int state, int pX, int pY) { // pX, pY are the pixel coordinates of the cursor in the coordinate system of the operation system
-	// Convert to normalized device space
-	float cX = 2.0f * pX / windowWidth - 1;	// flip y axis
-	float cY = 1.0f - 2.0f * pY / windowHeight;
-
-	char * buttonStat;
-	switch (state) {
-	case GLUT_DOWN: buttonStat = "pressed"; break;
-	case GLUT_UP:   buttonStat = "released"; break;
-	}
-
-	switch (button) {
-	case GLUT_LEFT_BUTTON:   printf("Left button %s at (%3.2f, %3.2f)\n", buttonStat, cX, cY);   break;
-	case GLUT_MIDDLE_BUTTON: printf("Middle button %s at (%3.2f, %3.2f)\n", buttonStat, cX, cY); break;
-	case GLUT_RIGHT_BUTTON:  printf("Right button %s at (%3.2f, %3.2f)\n", buttonStat, cX, cY);  break;
+void onMouse(int button, int state, int pX, int pY) {
+	if(state == GLUT_DOWN && button == GLUT_LEFT_BUTTON)
+	{
+		float cX = 2.0f * pX / windowWidth - 1;
+		float cY = 1.0f - 2.0f * pY / windowHeight;	
+		course->add(vec2(cX, cY));
+		glutPostRedisplay();
 	}
 }
 
-// Idle event indicating that some time elapsed: do animation here
 void onIdle() {
-	long time = glutGet(GLUT_ELAPSED_TIME); // elapsed time since the start of the program
+	long time = glutGet(GLUT_ELAPSED_TIME);
+	// TODO: animation
 }
