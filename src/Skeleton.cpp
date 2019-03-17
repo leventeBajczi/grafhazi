@@ -59,11 +59,29 @@ const char * const fragmentSource = R"(
 
 GPUProgram gpuProgram;
 
+class Camera
+{
+  private:
+	vec2 center = vec2(0.0f, 0.0f);
+  public:
+	void setCenter(vec2 _center)
+	{
+		center = _center;
+	}
+	mat4 getTranslationMatrix()
+	{
+		return TranslateMatrix(-center);
+	}
+	mat4 getInvTranslationMatrix()
+	{
+		return TranslateMatrix(center);
+	}
+} camera;
+
 class KochanekBartels
 {
   private:
 	std::vector<float> data;
-	std::vector<vec2> c_points;
 	unsigned int vbo;
 	unsigned int vao;
 
@@ -78,11 +96,10 @@ class KochanekBartels
 		return (1.0f - t) / 2.0f * (dy1/dx1 + dy2/dx2);
 	}
 	float color[3] = {0, 0, 0};
-
-  protected:
 	const float t;
-	const int resolution = 4;
-
+	const int resolution = 100;
+  protected:
+	std::vector<vec2> c_points;
   public:
 	KochanekBartels(float tension = 0.0, float start = 0.0f) : t(tension)
 	{
@@ -92,7 +109,6 @@ class KochanekBartels
 		glBindVertexArray(vao);
 		glGenBuffers(1, &vbo);
 		glBindBuffer(GL_ARRAY_BUFFER, vbo);
-		glBufferData(GL_ARRAY_BUFFER, sizeof(data.data()), data.data(), GL_DYNAMIC_DRAW);
 		glEnableVertexAttribArray(0);  // AttribArray 0
 		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), reinterpret_cast<void*>(0)); 
 	}
@@ -105,21 +121,41 @@ class KochanekBartels
 	void calc()
 	{
 		data.clear();
+		data.push_back(-1.0f);
+		data.push_back(-2.0f);
+
+		data.push_back(-2.0f);
+		data.push_back(-2.0f);
+		
+		data.push_back(-2.0f);
+		data.push_back(c_points.front().y);
+		
+		data.push_back(-1.0f);
+		data.push_back(c_points.front().y);
+		
+		data.push_back(-1.0f);
+		data.push_back(-2.0f);
 		float currX = c_points.front().x;
 		float currY = c_points.front().y;
 		for(auto it = c_points.begin(); it+1 != c_points.end(); it++)
 		{
 			if(currX >= (it+1)->x)
 			{
+				data.push_back(it->x);
+				data.push_back(-2.0f);
 				data.push_back(it->x);	
 				data.push_back(currY = it->y);	
 			}
 			while(currX < (it + 1)->x)
 			{
+				
+				data.push_back(currX);
+				data.push_back(-2.0f);
 				if(fabs(currX - it->x)<EPS)
 				{
 					data.push_back(it->x);	
 					data.push_back(currY = it->y);	
+					
 				}
 				else
 				{
@@ -128,38 +164,57 @@ class KochanekBartels
 					float a1 = v(it);
 					float a0 = it->y;
 					data.push_back(currX);
-					data.push_back(a3*(currX - it->x)*(currX - it->x)*(currX - it->x) + a2*(currX - it->x)*(currX - it->x) + a1*(currX - it->x) + a0);
+					data.push_back(currY = a3*(currX - it->x)*(currX - it->x)*(currX - it->x) + a2*(currX - it->x)*(currX - it->x) + a1*(currX - it->x) + a0);
+
 				}
 				currX+=2.0f/resolution;
 			}
 		}
-		data.push_back(c_points.back().x);
-		data.push_back(c_points.back().y);
-		glBufferData(GL_ARRAY_BUFFER, data.size() * sizeof(float), data.data(), GL_DYNAMIC_DRAW);
-	}
+		vec2 last = c_points.back();
+		data.push_back(last.x);
+		data.push_back(-2.0f);
+		
+		data.push_back(last.x);
+		data.push_back(last.y);
 
-	void draw()
+		data.push_back(2.0f);
+		data.push_back(-2.0f);
+		
+		data.push_back(2.0f);
+		data.push_back(last.y);
+		
+		data.push_back(last.x);
+		data.push_back(last.y);
+		}
+
+	virtual mat4 getMatrix() = 0; 
+
+	void baseDraw()
 	{
 		if(c_points.size() > 1)
 		{
 			glBindVertexArray(vao);		
 			glBindBuffer(GL_ARRAY_BUFFER, vbo);
-
-			glBindVertexArray(vao);
-			mat4 MVPTransform{ 1, 0, 0, 0,    // MVP matrix, 
-		                      0, 1, 0, 0,    // row-major!
-		                      0, 0, 1, 0,
-		                      0, 0, 0, 1 };
+			mat4 MVPTransform = getMatrix();
 			MVPTransform.SetUniform(gpuProgram.getId(), "MVP");
 			int location = glGetUniformLocation(gpuProgram.getId(), "color");
 			glUniform3f(location, color[0], color[1], color[2]);
 			calc();
-			printf("vbo: %d\npoints: %d\n", vbo, c_points.size());
-			glDrawArrays(GL_LINE_STRIP, 0, data.size() / 2);
+			glBufferData(GL_ARRAY_BUFFER, data.size() * sizeof(float), data.data(), GL_STATIC_DRAW);
+			glDrawArrays(GL_TRIANGLE_STRIP, 0, data.size() / 2);
 		}
 	}
-	void add(vec2 v)
+	virtual void draw()
 	{
+		baseDraw();
+	}
+	void add(vec2 _v)
+	{
+		vec4 vec(_v.x, _v.y, 0, 1);
+		vec = vec*camera.getInvTranslationMatrix();
+		vec2 v(vec.x, vec.y);
+		if(fabs(vec.x) > 1.0f || fabs(vec.y) > 1.0f)
+			return;
 		auto it = c_points.begin();
 		for(; it != c_points.end(); ++it)
 		{
@@ -180,16 +235,78 @@ class KochanekBartels
 	}
 };
 
-KochanekBartels* hills;
+class Hill : public KochanekBartels
+{
+  public:
+	Hill() : KochanekBartels(0.5f, 0.5f)
+	{
+		add(vec2(-0.7f, 0.85f));
+		add(vec2(0.18f, 0.11f));
+		add(vec2(0.52f, 0.61f));
+		setColor(vec3(0.6f,0.6f,0.6f));
+	}
+	mat4 getMatrix()
+	{
+		return mat4(1,0,0,0,
+					0,1,0,0,
+					0,0,1,0,
+					0,0,0,1);
+	}
+};
+
+class Course : public KochanekBartels
+{
+  private:
+	unsigned int line_vbo;
+	unsigned int line_vao;
+  public:
+	Course() : KochanekBartels(-0.5f, 0.0f)
+	{
+		glGenVertexArrays(1, &line_vao);
+		glBindVertexArray(line_vao);
+		glGenBuffers(1, &line_vbo);
+		glBindBuffer(GL_ARRAY_BUFFER, line_vbo);
+		glEnableVertexAttribArray(0);  // AttribArray 0
+		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), reinterpret_cast<void*>(0)); 
+		setColor(vec3(0.2f,0.6f,0.2f));
+	}	
+	mat4 getMatrix()
+	{
+		return camera.getTranslationMatrix();
+	}
+
+	void startStopDraw()
+	{
+		glBindVertexArray(line_vao);
+		glBindBuffer(GL_ARRAY_BUFFER, line_vbo);
+		float f[] = {c_points.front().x, c_points.front().y, 
+					 c_points.front().x, 2.0f,
+					 c_points.back().x, c_points.back().y,
+					 c_points.back().x, 2.0f};
+		mat4 MVPTransform = getMatrix();
+		MVPTransform.SetUniform(gpuProgram.getId(), "MVP");
+		int location = glGetUniformLocation(gpuProgram.getId(), "color");
+		glUniform3f(location, 0.65f, 0.16f, 0.16f);
+		glLineWidth(5.0f);
+		glBufferData(GL_ARRAY_BUFFER, 8*sizeof(float), f, GL_STATIC_DRAW);
+		glDrawArrays(GL_LINES, 0, 4);
+	}
+
+	void draw()
+	{
+		baseDraw();
+		startStopDraw();
+	}
+};
+
+Hill* hills;
 KochanekBartels* course;
 
 void onInitialization() {
 	glViewport(0, 0, windowWidth, windowHeight);
 
-	hills = new KochanekBartels(0.5f, 0.5f);
-	hills->setColor(vec3(1,1,0));
-	course = new KochanekBartels(-0.5f);
-	course->setColor(vec3(0,1,0));
+	hills = new Hill();
+	course = new Course();
 
 	//TODO: Create unicycle
 
@@ -197,7 +314,7 @@ void onInitialization() {
 }
 
 void onDisplay() {
-	glClearColor(0, 0, 0, 0);
+	glClearColor(0.2f, 0.2f, 0.6f, 1);
 	glClear(GL_COLOR_BUFFER_BIT);
 
 	hills->draw();
@@ -207,11 +324,12 @@ void onDisplay() {
 
 	glutSwapBuffers();
 }
+bool doing = true;
 
 void onKeyboard(unsigned char key, int pX, int pY) {
 	if (key == ' ')
 	{
-		//TODO: move camera
+		doing = !doing;
 	} 
 
 }
@@ -232,7 +350,15 @@ void onMouse(int button, int state, int pX, int pY) {
 	}
 }
 
+float centerX = 0.0f;
+float v = 0.25f; // /s
+long lastTime = 0;
 void onIdle() {
 	long time = glutGet(GLUT_ELAPSED_TIME);
-	// TODO: animation
+	if(doing){
+		camera.setCenter(vec2(centerX+=(v*((time-lastTime)*1.0/1000)), 0.0f));
+		if(fabs(centerX) > 1.0f) v*=-1;
+		glutPostRedisplay();
+	}
+	lastTime = time;
 }
