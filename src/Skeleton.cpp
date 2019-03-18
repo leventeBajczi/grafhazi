@@ -299,16 +299,134 @@ class Course : public KochanekBartels
 	}
 };
 
+class Unicycle
+{
+	const int resolution = 100;
+	const int spokes = 7;
+	const float wheelSize = 0.05f;
+	const float bodyLength = 0.15f;
+	const float headSize = 0.025f;
+  private:
+	unsigned int vbo;
+	unsigned int vao;
+	std::vector<float> data;
+	vec2 holdingPoint;
+	float holdingTangent;
+	vec2 center;
+	vec2 b;
+	float angle;
+  public:
+	const float v_pedal = -M_PI/2;
+	float pedal = M_PI;
+	Unicycle()
+	{
+		glGenVertexArrays(1, &vao);
+		glBindVertexArray(vao);
+		glGenBuffers(1, &vbo);
+		glBindBuffer(GL_ARRAY_BUFFER, vbo);
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), reinterpret_cast<void*>(0)); 
+		holdingPoint = vec2(-0.5f, 0.0f);
+		holdingTangent = 0.0f;
+	}
+	void drawWheel()
+	{
+		data.clear();
+		angle = fabs(holdingTangent) < EPS ? M_PI/2 : atanf(-1.0f / holdingTangent);
+		center = holdingPoint + vec2(cos(angle), sin(angle))*wheelSize;
+		int offset = resolution*pedal/M_PI/2.0f;
+		for(int i = 0; i<=resolution; i++)
+		{
+			data.push_back(cosf(2.0f*M_PI/resolution*i)*wheelSize + center.x);
+			data.push_back(sinf(2.0f*M_PI/resolution*i)*wheelSize + center.y);
+			if(abs((i-offset)*spokes % resolution) < spokes)
+			{
+				data.push_back(center.x);
+				data.push_back(center.y);
+				data.push_back(cosf(2.0f*M_PI/resolution*i)*wheelSize + center.x);
+				data.push_back(sinf(2.0f*M_PI/resolution*i)*wheelSize + center.y);
+			}
+		}
+		glLineWidth(2.0f);
+		glBufferData(GL_ARRAY_BUFFER, data.size()*sizeof(float), data.data(), GL_DYNAMIC_DRAW);
+		glDrawArrays(GL_LINE_STRIP, 0, data.size()/2);
+
+	}
+	void drawBody()
+	{
+		data.clear();
+		b = center + vec2(cos(angle), sin(angle))*wheelSize;
+		data.push_back(b.x);
+		data.push_back(b.y);
+		data.push_back(b.x);
+		data.push_back(b.y + bodyLength);
+		glLineWidth(3.0f);		
+		glBufferData(GL_ARRAY_BUFFER, data.size()*sizeof(float), data.data(), GL_STATIC_DRAW);
+		glDrawArrays(GL_LINE_STRIP, 0, data.size()/2);
+		data.clear();
+		for(int i = 0; i<=resolution; i++)
+		{
+			data.push_back(cosf(2.0f*M_PI/resolution*i - M_PI/2)*headSize + b.x);
+			data.push_back(sinf(2.0f*M_PI/resolution*i - M_PI/2)*headSize + b.y + bodyLength);
+		}
+		glBufferData(GL_ARRAY_BUFFER, data.size()*sizeof(float), data.data(), GL_STATIC_DRAW);
+		glDrawArrays(GL_TRIANGLE_FAN, 0, data.size()/2);
+
+	}
+	void drawLegs(float phase)
+	{
+		data.clear();
+		data.push_back(b.x);
+		data.push_back(b.y);
+		vec2 foot(center.x + wheelSize * 0.5f * cosf(pedal + phase), center.y + wheelSize * 0.5f * sinf(pedal + phase));
+		vec2 d = foot + (b - foot)*0.5f;
+		float angle = fabs((b-d).x) < EPS ? -M_PI/2 : (atanf((b-d).y/(b-d).x));
+		float length = sqrtf((b-d).x*(b-d).x + (b-d).y*(b-d).y);
+		float shift = sqrtf(wheelSize*0.75f*wheelSize*0.75f - length*length);
+		if(foot.x > b.x)
+		{
+			data.push_back(d.x + (shift*cosf(angle + M_PI/2)));		//itt valami nemjó..
+			data.push_back(d.y + (shift*sinf(angle + M_PI/2)));
+		}
+		else
+		{
+			data.push_back(d.x - (shift*cosf(angle + M_PI/2)));		//itt valami nemjó..
+			data.push_back(d.y - (shift*sinf(angle + M_PI/2)));
+		}
+		data.push_back(foot.x);
+		data.push_back(foot.y);
+		glLineWidth(2.0f);
+		glBufferData(GL_ARRAY_BUFFER, data.size()*sizeof(float), data.data(), GL_STATIC_DRAW);
+		glDrawArrays(GL_LINE_STRIP, 0, data.size()/2);
+
+	}
+	void draw()
+	{
+		glBindVertexArray(vao);
+		glBindBuffer(GL_ARRAY_BUFFER, vbo);
+		mat4 MVPTransform = camera.getTranslationMatrix();
+		MVPTransform.SetUniform(gpuProgram.getId(), "MVP");
+		int location = glGetUniformLocation(gpuProgram.getId(), "color");
+		glUniform3f(location, 0.5f, 0.5f, 0.0f);
+		glLineWidth(2.0f);		
+		drawWheel();
+		drawBody();
+		drawLegs(0.0f);
+		drawLegs(M_PI);
+
+	}
+};
+
 Hill* hills;
 KochanekBartels* course;
+Unicycle* uni;
 
 void onInitialization() {
 	glViewport(0, 0, windowWidth, windowHeight);
 
 	hills = new Hill();
 	course = new Course();
-
-	//TODO: Create unicycle
+	uni = new Unicycle();
 
 	gpuProgram.Create(vertexSource, fragmentSource, "outColor");
 }
@@ -319,6 +437,7 @@ void onDisplay() {
 
 	hills->draw();
 	course->draw();
+	uni->draw();
 
 	//TODO: Unicycle draw
 
@@ -350,15 +469,18 @@ void onMouse(int button, int state, int pX, int pY) {
 	}
 }
 
-float centerX = 0.0f;
-float v = 0.25f; // /s
+float centerX = -1.0f;
+float v = -0.0f;
 long lastTime = 0;
 void onIdle() {
 	long time = glutGet(GLUT_ELAPSED_TIME);
 	if(doing){
 		camera.setCenter(vec2(centerX+=(v*((time-lastTime)*1.0/1000)), 0.0f));
 		if(fabs(centerX) > 1.0f) v*=-1;
-		glutPostRedisplay();
-	}
-	lastTime = time;
+	
+	uni->pedal = uni->pedal + uni->v_pedal * (time-lastTime)/1000.0f;
+	if(uni->pedal > M_PI*2.0f) uni->pedal -= M_PI*2.0f;
+	if(uni->pedal < 0.0f) uni->pedal += M_PI*2.0f;
+	glutPostRedisplay();
+	}lastTime = time;
 }
