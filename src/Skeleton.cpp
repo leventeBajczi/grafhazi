@@ -35,11 +35,12 @@
 #define EPS 1E-7
 const char * const vertexSource = R"(
 	#version 330				// Shader 3.3
+
 	precision highp float;		// normal floats, makes no difference on desktop computers
 
 	uniform mat4 MVP;			// uniform variable, the Model-View-Projection transformation matrix
 	layout(location = 0) in vec2 vp;	// Varying input: vp = vertex position is expected in attrib array 0
-
+	
 	void main() {
 		gl_Position = vec4(vp.x, vp.y, 0, 1) * MVP;		// transform vp from modeling space to normalized device space
 	}
@@ -51,13 +52,45 @@ const char * const fragmentSource = R"(
 	
 	uniform vec3 color;		// uniform variable, the color of the primitive
 	out vec4 outColor;		// computed color of the current pixel
-
+	
 	void main() {
+		
 		outColor = vec4(color, 1);	// computed color is the color of the primitive
 	}
 )";
 
+const char * const texturingVertexSource = R"(
+	#version 330				// Shader 3.3
+
+	precision highp float;		// normal floats, makes no difference on desktop computers
+
+	uniform mat4 MVP;			// uniform variable, the Model-View-Projection transformation matrix
+	layout(location = 0) in vec2 vp;	// Varying input: vp = vertex position is expected in attrib array 0
+	layout(location = 1) in vec2 vuv;
+	out vec2 tex;
+	void main() {
+		tex = vuv;
+		gl_Position = vec4(vp.x, vp.y, 0, 1) * MVP;		// transform vp from modeling space to normalized device space
+	}
+)";
+
+
+const char * const texturingFragmentSource = R"(
+	#version 330			// Shader 3.3
+	precision highp float;	// normal floats, makes no difference on desktop computers
+	
+	uniform sampler2D textureUnit;
+	in vec2 tex;
+	out vec4 outColor;		// computed color of the current pixel
+	
+	void main() {
+		
+		outColor = texture(textureUnit, tex);
+	}
+)";
+
 GPUProgram gpuProgram;
+GPUProgram gpuProgramWithTexturing;
 
 class Camera
 {
@@ -81,10 +114,6 @@ class Camera
 class KochanekBartels
 {
   private:
-	std::vector<float> data;
-	unsigned int vbo;
-	unsigned int vao;
-
 	float v(std::vector<vec2>::iterator it)
 	{
 		if(it == c_points.begin() || it+1 == c_points.end())
@@ -95,46 +124,24 @@ class KochanekBartels
 		float dy2 = (it+1)->y - it->y;	
 		return (1.0f - t) / 2.0f * (dy1/dx1 + dy2/dx2);
 	}
-	float color[3] = {0, 0, 0};
 	const float t;
-	const int resolution = 100;
+	const float bottom;
   protected:
+	unsigned int vao;
+	std::vector<float> data;
 	std::vector<vec2> c_points;
+	const int resolution = 600;
   public:
-	KochanekBartels(float tension = 0.0, float start = 0.0f) : t(tension)
+	KochanekBartels(float tension = 0.0, float start = 0.0f, float _bottom = -2.0f) : t(tension), bottom(_bottom)
 	{
 		add(vec2(-1.0f, start));
 		add(vec2(1.0f, start));
 		glGenVertexArrays(1, &vao);
 		glBindVertexArray(vao);
-		glGenBuffers(1, &vbo);
-		glBindBuffer(GL_ARRAY_BUFFER, vbo);
-		glEnableVertexAttribArray(0);  // AttribArray 0
-		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), reinterpret_cast<void*>(0)); 
 	}
-	void setColor(vec3 _color)
-	{
-		color[0] = _color.x;
-		color[1] = _color.y;
-		color[2] = _color.z;
-	}
+
 	void calc()
 	{
-		data.clear();
-		data.push_back(-1.0f);
-		data.push_back(-2.0f);
-
-		data.push_back(-2.0f);
-		data.push_back(-2.0f);
-		
-		data.push_back(-2.0f);
-		data.push_back(c_points.front().y);
-		
-		data.push_back(-1.0f);
-		data.push_back(c_points.front().y);
-		
-		data.push_back(-1.0f);
-		data.push_back(-2.0f);
 		float currX = c_points.front().x;
 		float currY = c_points.front().y;
 		for(auto it = c_points.begin(); it+1 != c_points.end(); it++)
@@ -142,7 +149,7 @@ class KochanekBartels
 			if(currX >= (it+1)->x)
 			{
 				data.push_back(it->x);
-				data.push_back(-2.0f);
+				data.push_back(bottom);
 				data.push_back(it->x);	
 				data.push_back(currY = it->y);	
 			}
@@ -150,7 +157,7 @@ class KochanekBartels
 			{
 				
 				data.push_back(currX);
-				data.push_back(-2.0f);
+				data.push_back(bottom);
 				if(fabs(currX - it->x)<EPS)
 				{
 					data.push_back(it->x);	
@@ -172,42 +179,12 @@ class KochanekBartels
 		}
 		vec2 last = c_points.back();
 		data.push_back(last.x);
-		data.push_back(-2.0f);
+		data.push_back(bottom);
 		
 		data.push_back(last.x);
 		data.push_back(last.y);
-
-		data.push_back(2.0f);
-		data.push_back(-2.0f);
-		
-		data.push_back(2.0f);
-		data.push_back(last.y);
-		
-		data.push_back(last.x);
-		data.push_back(last.y);
-		}
-
-	virtual mat4 getMatrix() = 0; 
-
-	void baseDraw()
-	{
-		if(c_points.size() > 1)
-		{
-			glBindVertexArray(vao);		
-			glBindBuffer(GL_ARRAY_BUFFER, vbo);
-			mat4 MVPTransform = getMatrix();
-			MVPTransform.SetUniform(gpuProgram.getId(), "MVP");
-			int location = glGetUniformLocation(gpuProgram.getId(), "color");
-			glUniform3f(location, color[0], color[1], color[2]);
-			calc();
-			glBufferData(GL_ARRAY_BUFFER, data.size() * sizeof(float), data.data(), GL_STATIC_DRAW);
-			glDrawArrays(GL_TRIANGLE_STRIP, 0, data.size() / 2);
-		}
 	}
-	virtual void draw()
-	{
-		baseDraw();
-	}
+
 	void add(vec2 _v)
 	{
 		vec4 vec(_v.x, _v.y, 0, 1);
@@ -237,39 +214,109 @@ class KochanekBartels
 
 class Hill : public KochanekBartels
 {
+  private:
+	unsigned int vbo[2];
+	Texture* text;
   public:
-	Hill() : KochanekBartels(0.5f, 0.5f)
+	Hill() : KochanekBartels(0.5f, 0.5f, -1.0f)
 	{
+
 		add(vec2(-0.7f, 0.85f));
 		add(vec2(0.18f, 0.11f));
 		add(vec2(0.52f, 0.61f));
-		setColor(vec3(0.6f,0.6f,0.6f));
+
+		float coords[8] = {-1.0f, -1.0f,
+						   1.0f, -1.0f,
+						   1.0f, 1.0f,
+						   -1.0f, 1.0f};
+
+		float uvs[8] = {0, 0,
+						1, 0,
+						1, 1,
+						0, 1};
+
+		glGenBuffers(2, vbo);
+		glBindBuffer(GL_ARRAY_BUFFER, vbo[0]);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(coords), coords, GL_STATIC_DRAW);
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, reinterpret_cast<void*>(0)); 		
+	
+		glBindBuffer(GL_ARRAY_BUFFER, vbo[1]);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(uvs), uvs, GL_STATIC_DRAW);
+		glEnableVertexAttribArray(1);
+		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, reinterpret_cast<void*>(0)); 		
+		calc();
+		std::vector<vec4> image(resolution * resolution);
+		for(int i = 0; i<resolution; i++)
+		{
+			for(int j = 0; j<resolution; j++)
+			{
+				if(2.0f * i / resolution - 1.0f > data[4*j + 3])
+				{
+					image[i*resolution + j] = vec4(0.2f, 0.2f, 0.6f, 1.0f);
+				}
+				else
+				{
+					if((i > 4*resolution / 5) || ((i > 2 * resolution / 3 ) && (i * 7.5f / resolution - 5 )*RAND_MAX >= rand() ))	
+						image[i*resolution + j] = vec4(1, 1, 1, 1);
+					else
+						image[i*resolution + j] = vec4(0.3f, 0.3f, 0.3f, 1.0f);
+				}
+			}
+
+		}
+		text = new Texture(resolution, resolution, image);
+
 	}
-	mat4 getMatrix()
+	void draw()
 	{
-		return mat4(1,0,0,0,
-					0,1,0,0,
-					0,0,1,0,
-					0,0,0,1);
+		glBindVertexArray(vao);
+		gpuProgramWithTexturing.Use();
+		mat4 MVPTransform{1, 0, 0, 0,
+						  0, 1, 0, 0,
+						  0, 0, 1, 0,
+						  0, 0, 0, 1};
+
+		MVPTransform.SetUniform(gpuProgramWithTexturing.getId(), "MVP");
+
+		text->SetUniform(gpuProgramWithTexturing.getId(), "textureUnit");
+
+		glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+		gpuProgram.Use();
 	}
 };
 
 class Course : public KochanekBartels
 {
   private:
+	unsigned int vbo;
 	unsigned int line_vbo;
 	unsigned int line_vao;
+	float color[3] = {0, 0, 0};
+
   public:
 	Course() : KochanekBartels(-0.5f, 0.0f)
 	{
+		glGenBuffers(1, &vbo);
+		glBindBuffer(GL_ARRAY_BUFFER, vbo);
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), reinterpret_cast<void*>(0)); 
+
 		glGenVertexArrays(1, &line_vao);
 		glBindVertexArray(line_vao);
 		glGenBuffers(1, &line_vbo);
 		glBindBuffer(GL_ARRAY_BUFFER, line_vbo);
-		glEnableVertexAttribArray(0);  // AttribArray 0
+		glEnableVertexAttribArray(0);
 		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), reinterpret_cast<void*>(0)); 
 		setColor(vec3(0.2f,0.6f,0.2f));
 	}	
+	
+	void setColor(vec3 _color)
+	{
+		color[0] = _color.x;
+		color[1] = _color.y;
+		color[2] = _color.z;
+	}
 	mat4 getMatrix()
 	{
 		return camera.getTranslationMatrix();
@@ -291,9 +338,47 @@ class Course : public KochanekBartels
 		glBufferData(GL_ARRAY_BUFFER, 8*sizeof(float), f, GL_STATIC_DRAW);
 		glDrawArrays(GL_LINES, 0, 4);
 	}
+	
+	void baseDraw()
+	{
+		if(c_points.size() > 1)
+		{
+			glBindVertexArray(vao);		
+			glBindBuffer(GL_ARRAY_BUFFER, vbo);
+			mat4 MVPTransform = getMatrix();
+			MVPTransform.SetUniform(gpuProgram.getId(), "MVP");
+			int location = glGetUniformLocation(gpuProgram.getId(), "color");
+			glUniform3f(location, color[0], color[1], color[2]);
+			glBufferData(GL_ARRAY_BUFFER, data.size() * sizeof(float), data.data(), GL_STATIC_DRAW);
+			glDrawArrays(GL_TRIANGLE_STRIP, 0, data.size() / 2);
+		}
+	}
+
 
 	void draw()
 	{
+		data.clear();
+
+		data.push_back(-2.0f);
+		data.push_back(-2.0f);
+		
+		data.push_back(-2.0f);
+		data.push_back(c_points.front().y);
+		
+		data.push_back(-1.0f);
+		data.push_back(c_points.front().y);
+		
+		data.push_back(-1.0f);
+		data.push_back(-2.0f);
+		
+		calc();
+		
+		data.push_back(2.0f);
+		data.push_back(-2.0f);
+		
+		data.push_back(2.0f);
+		data.push_back(c_points.back().y);
+		
 		baseDraw();
 		startStopDraw();
 	}
@@ -418,21 +503,24 @@ class Unicycle
 };
 
 Hill* hills;
-KochanekBartels* course;
+Course* course;
 Unicycle* uni;
 
 void onInitialization() {
+	srand(123);
 	glViewport(0, 0, windowWidth, windowHeight);
 
 	hills = new Hill();
 	course = new Course();
 	uni = new Unicycle();
 
+	gpuProgramWithTexturing.Create(texturingVertexSource, texturingFragmentSource, "outColor");
 	gpuProgram.Create(vertexSource, fragmentSource, "outColor");
+
 }
 
 void onDisplay() {
-	glClearColor(0.2f, 0.2f, 0.6f, 1);
+	glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 	glClear(GL_COLOR_BUFFER_BIT);
 
 	hills->draw();
@@ -469,8 +557,8 @@ void onMouse(int button, int state, int pX, int pY) {
 	}
 }
 
-float centerX = -1.0f;
-float v = -0.0f;
+float centerX = -0.0f;
+float v = 0.1f;
 long lastTime = 0;
 void onIdle() {
 	long time = glutGet(GLUT_ELAPSED_TIME);
