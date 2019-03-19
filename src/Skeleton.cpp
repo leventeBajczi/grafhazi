@@ -300,7 +300,6 @@ class Course : public KochanekBartels
   public:
 	Course() : KochanekBartels(-0.5f, 0.0f)
 	{
-		add(vec2(0.0f, -0.75f));
 		glGenBuffers(1, &vbo);
 		glBindBuffer(GL_ARRAY_BUFFER, vbo);
 		glEnableVertexAttribArray(0);
@@ -312,13 +311,23 @@ class Course : public KochanekBartels
 		glBindBuffer(GL_ARRAY_BUFFER, line_vbo);
 		glEnableVertexAttribArray(0);
 		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), reinterpret_cast<void*>(0)); 
-		setColor(vec3(0.2f,0.6f,0.2f));
+		setColor(vec3(0,0,0));
 	}	
 
 	void moveUnicycle(float);
 
 	float getY(float x, float* tangent)
 	{
+		if(data[start_index].x > x)
+		{
+			*tangent = 0.0f;
+			return data[start_index].y;
+		}
+		else if(data[stop_index].x < x)
+		{
+			*tangent = 0.0f;
+			return data[stop_index].y;
+		}
 		if(data[current].x < x)
 		{
 			for(int i = current; i < data.size()-2; i+=2)
@@ -435,6 +444,7 @@ class Unicycle
 	const float wheelSize = 0.05f;
 	const float v_pedal = -M_PI/2;
 	float pedal = M_PI;
+	int orientation = 1;
 	Unicycle()
 	{
 		glGenVertexArrays(1, &vao);
@@ -443,11 +453,12 @@ class Unicycle
 		glBindBuffer(GL_ARRAY_BUFFER, vbo);
 		glEnableVertexAttribArray(0);
 		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), reinterpret_cast<void*>(0)); 
-		holdingPoint = vec2(-0.5f, 0.0f);
+		holdingPoint = vec2(-1.0f, 0.0f);
 		holdingTangent = 0.0f;
 	}
-	void setHoldingPoint(vec2 _holdingPoint, float _holdingTangent)
+	void setHoldingPoint(int _orientation, vec2 _holdingPoint, float _holdingTangent)
 	{
+		orientation = _orientation;
 		holdingPoint = _holdingPoint;
 		holdingTangent = _holdingTangent;
 	}
@@ -456,7 +467,7 @@ class Unicycle
 	{
 		data.clear();
 		angle = fabs(holdingTangent) < EPS ? M_PI/2 : atanf(-1.0f / holdingTangent);
-		center = holdingPoint + vec2(holdingTangent < 0 ? (cosf(angle)) : -(cosf(angle)), holdingTangent < 0 ? (sinf(angle)) : -(sinf(angle)))*wheelSize;
+		center = holdingPoint + vec2(holdingTangent <= 0 ? (cosf(angle)) : -(cosf(angle)), holdingTangent <= 0 ? (sinf(angle)) : -(sinf(angle)))*wheelSize;
 		int offset = resolution*pedal/M_PI/2.0f;
 		for(int i = 0; i<=resolution; i++)
 		{
@@ -508,13 +519,13 @@ class Unicycle
 		float shift = sqrtf(wheelSize*0.75f*wheelSize*0.75f - length*length);
 		if(foot.x > b.x)
 		{
-			data.push_back(d.x + (shift*cosf(angle + M_PI/2)));		//itt valami nemjó..
-			data.push_back(d.y + (shift*sinf(angle + M_PI/2)));
+			data.push_back(d.x + orientation*(shift*cosf(angle + M_PI/2)));		//itt valami nemjó..
+			data.push_back(d.y + orientation*(shift*sinf(angle + M_PI/2)));
 		}
 		else
 		{
-			data.push_back(d.x - (shift*cosf(angle + M_PI/2)));		//itt valami nemjó..
-			data.push_back(d.y - (shift*sinf(angle + M_PI/2)));
+			data.push_back(d.x - orientation*(shift*cosf(angle + M_PI/2)));		//itt valami nemjó..
+			data.push_back(d.y - orientation*(shift*sinf(angle + M_PI/2)));
 		}
 		data.push_back(foot.x);
 		data.push_back(foot.y);
@@ -607,24 +618,34 @@ int orientation = 1;
 void Course::moveUnicycle(float elapsedTime)
 {
 	const float dt = 0.01f;
-	const float F = 0.1;
-	const float m = 0.005;
-	const float g = 10;
-	const float ro = 1.30;
+	const float F = 0.5;
+	const float m = 0.05;
+	const float g = 9.81;
+	const float ro = 13;
 	float tangent;
 	float y = getY(currX, &tangent);
 	for(float t = 0; t < elapsedTime; t+=dt)
 	{
+		if(currX>=1.0f)
+		{
+			currX = 1.0f;
+			y = getY(currX, &tangent);
+			orientation=-1;
+		}
+		else if(currX<=-1.0f)
+		{
+			currX = -1.0f;
+			y = getY(currX, &tangent);
+			orientation=1;
+		}
 		float Dt = fmin(dt, elapsedTime-t);
 		float v = (F-orientation*m*g*sinf(atanf(tangent))/ro);
 		float dx = v*Dt / sqrt(1+tangent*tangent);
 		uni->pedal -= orientation*v*Dt/uni->wheelSize*2;
-		uni->setHoldingPoint(vec2(currX+=orientation*dx, y = getY(currX, &tangent)), tangent);
+		currX+=orientation*dx;
+		y = getY(currX, &tangent);
 	}
-	if(currX>=1.0f)
-		orientation=-1;
-	else if(currX<=-1.0f)
-		orientation=1;
+	uni->setHoldingPoint(orientation, vec2(currX, y), tangent);
 	camera.setCenter(vec2(currX, y));
 
 }
