@@ -124,11 +124,11 @@ class KochanekBartels
 		float dy2 = (it+1)->y - it->y;	
 		return (1.0f - t) / 2.0f * (dy1/dx1 + dy2/dx2);
 	}
-	const float t;
 	const float bottom;
   protected:
+	const float t;
 	unsigned int vao;
-	std::vector<float> data;
+	std::vector<vec2> data;
 	std::vector<vec2> c_points;
 	const int resolution = 600;
   public:
@@ -148,21 +148,16 @@ class KochanekBartels
 		{
 			if(currX >= (it+1)->x)
 			{
-				data.push_back(it->x);
-				data.push_back(bottom);
-				data.push_back(it->x);	
-				data.push_back(currY = it->y);	
+				data.push_back(vec2(it->x, bottom));
+				data.push_back(vec2(it->x, currY = it->y));
 			}
 			while(currX < (it + 1)->x)
 			{
 				
-				data.push_back(currX);
-				data.push_back(bottom);
+				data.push_back(vec2(currX, bottom));
 				if(fabs(currX - it->x)<EPS)
 				{
-					data.push_back(it->x);	
-					data.push_back(currY = it->y);	
-					
+					data.push_back(vec2(it->x, currY = it->y));					
 				}
 				else
 				{
@@ -170,19 +165,15 @@ class KochanekBartels
 					float a2 = ((it+1)->y - it->y)*3.0f/((it+1)->x - it->x)/((it+1)->x - it->x) - (v(it+1)+2*v(it))/((it+1)->x - it->x);
 					float a1 = v(it);
 					float a0 = it->y;
-					data.push_back(currX);
-					data.push_back(currY = a3*(currX - it->x)*(currX - it->x)*(currX - it->x) + a2*(currX - it->x)*(currX - it->x) + a1*(currX - it->x) + a0);
-
+					data.push_back(vec2(currX, currY = a3*(currX - it->x)*(currX - it->x)*(currX - it->x) + a2*(currX - it->x)*(currX - it->x) + a1*(currX - it->x) + a0));
 				}
 				currX+=2.0f/resolution;
 			}
 		}
 		vec2 last = c_points.back();
-		data.push_back(last.x);
-		data.push_back(bottom);
+		data.push_back(vec2(last.x, bottom));
 		
-		data.push_back(last.x);
-		data.push_back(last.y);
+		data.push_back(last);
 	}
 
 	void add(vec2 _v)
@@ -251,7 +242,7 @@ class Hill : public KochanekBartels
 		{
 			for(int j = 0; j<resolution; j++)
 			{
-				if(2.0f * i / resolution - 1.0f > data[4*j + 3])
+				if(2.0f * i / resolution - 1.0f > data[2*j+1].y)
 				{
 					image[i*resolution + j] = vec4(0.2f, 0.2f, 0.6f, 1.0f);
 				}
@@ -293,10 +284,23 @@ class Course : public KochanekBartels
 	unsigned int line_vbo;
 	unsigned int line_vao;
 	float color[3] = {0, 0, 0};
-
+	unsigned int start_index = 0;
+	unsigned int stop_index = 0;
+	float v(std::vector<vec2>::iterator it)
+	{
+		if(it == c_points.begin() || it+2 == c_points.end())
+			return 0.0f;
+		float dx1 = it->x - (it-2)->x;	
+		float dy1 = it->y - (it-2)->y;	
+		float dx2 = (it+2)->x - it->x;	
+		float dy2 = (it+2)->y - it->y;	
+		return (1.0f - t) / 2.0f * (dy1/dx1 + dy2/dx2);
+	}
+	unsigned int current = 3;
   public:
 	Course() : KochanekBartels(-0.5f, 0.0f)
 	{
+		add(vec2(0.0f, -0.75f));
 		glGenBuffers(1, &vbo);
 		glBindBuffer(GL_ARRAY_BUFFER, vbo);
 		glEnableVertexAttribArray(0);
@@ -310,7 +314,41 @@ class Course : public KochanekBartels
 		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), reinterpret_cast<void*>(0)); 
 		setColor(vec3(0.2f,0.6f,0.2f));
 	}	
-	
+
+	void moveUnicycle(float);
+
+	float getY(float x, float* tangent)
+	{
+		if(data[current].x < x)
+		{
+			for(int i = current; i < data.size()-2; i+=2)
+			{
+				if(data[i].x <= x && data[i+2].x >= x)
+				{
+					float offset = x - data[i].x;
+					*tangent = (data[i+2].y - data[i].y)/(data[i+2].x - data[i].x);
+					current = i;
+					return *tangent*offset + data[i].y;
+				}
+			}
+		}
+		else
+		{
+			for(int i = current; i >= 2; i-=2)
+			{
+				if(data[i-2].x <= x && data[i].x >= x)
+				{
+					float offset = x - data[i-2].x;
+					*tangent = (data[i].y - data[i-2].y)/(data[i].x - data[i-2].x);
+					current = i;
+					return *tangent*offset + data[i-2].y;
+				}
+			}
+		}
+		return 1/0;
+	}
+
+
 	void setColor(vec3 _color)
 	{
 		color[0] = _color.x;
@@ -349,8 +387,8 @@ class Course : public KochanekBartels
 			MVPTransform.SetUniform(gpuProgram.getId(), "MVP");
 			int location = glGetUniformLocation(gpuProgram.getId(), "color");
 			glUniform3f(location, color[0], color[1], color[2]);
-			glBufferData(GL_ARRAY_BUFFER, data.size() * sizeof(float), data.data(), GL_STATIC_DRAW);
-			glDrawArrays(GL_TRIANGLE_STRIP, 0, data.size() / 2);
+			glBufferData(GL_ARRAY_BUFFER, data.size() * sizeof(vec2), data.data(), GL_STATIC_DRAW);
+			glDrawArrays(GL_TRIANGLE_STRIP, 0, data.size());
 		}
 	}
 
@@ -359,26 +397,20 @@ class Course : public KochanekBartels
 	{
 		data.clear();
 
-		data.push_back(-2.0f);
-		data.push_back(-2.0f);
-		
-		data.push_back(-2.0f);
-		data.push_back(c_points.front().y);
-		
-		data.push_back(-1.0f);
-		data.push_back(c_points.front().y);
-		
-		data.push_back(-1.0f);
-		data.push_back(-2.0f);
-		
+		data.push_back(vec2(-1.0f, -2.0f));
+		data.push_back(vec2(-2.0f, -2.0f));
+		data.push_back(vec2(-2.0f, c_points.front().y));
+		data.push_back(vec2(-1.0f, c_points.front().y));
+
+
+		start_index = data.size();
 		calc();
-		
-		data.push_back(2.0f);
-		data.push_back(-2.0f);
-		
-		data.push_back(2.0f);
-		data.push_back(c_points.back().y);
-		
+		stop_index = data.size();
+
+		data.push_back(vec2(2.0f, -2.0f));
+
+		data.push_back(vec2(2.0f, c_points.front().y));
+
 		baseDraw();
 		startStopDraw();
 	}
@@ -388,7 +420,6 @@ class Unicycle
 {
 	const int resolution = 100;
 	const int spokes = 7;
-	const float wheelSize = 0.05f;
 	const float bodyLength = 0.15f;
 	const float headSize = 0.025f;
   private:
@@ -401,6 +432,7 @@ class Unicycle
 	vec2 b;
 	float angle;
   public:
+	const float wheelSize = 0.05f;
 	const float v_pedal = -M_PI/2;
 	float pedal = M_PI;
 	Unicycle()
@@ -414,11 +446,17 @@ class Unicycle
 		holdingPoint = vec2(-0.5f, 0.0f);
 		holdingTangent = 0.0f;
 	}
+	void setHoldingPoint(vec2 _holdingPoint, float _holdingTangent)
+	{
+		holdingPoint = _holdingPoint;
+		holdingTangent = _holdingTangent;
+	}
+	
 	void drawWheel()
 	{
 		data.clear();
 		angle = fabs(holdingTangent) < EPS ? M_PI/2 : atanf(-1.0f / holdingTangent);
-		center = holdingPoint + vec2(cos(angle), sin(angle))*wheelSize;
+		center = holdingPoint + vec2(holdingTangent < 0 ? (cosf(angle)) : -(cosf(angle)), holdingTangent < 0 ? (sinf(angle)) : -(sinf(angle)))*wheelSize;
 		int offset = resolution*pedal/M_PI/2.0f;
 		for(int i = 0; i<=resolution; i++)
 		{
@@ -440,7 +478,7 @@ class Unicycle
 	void drawBody()
 	{
 		data.clear();
-		b = center + vec2(cos(angle), sin(angle))*wheelSize;
+		b = center + vec2(0, 1)*wheelSize;
 		data.push_back(b.x);
 		data.push_back(b.y);
 		data.push_back(b.x);
@@ -527,8 +565,6 @@ void onDisplay() {
 	course->draw();
 	uni->draw();
 
-	//TODO: Unicycle draw
-
 	glutSwapBuffers();
 }
 bool doing = true;
@@ -557,18 +593,38 @@ void onMouse(int button, int state, int pX, int pY) {
 	}
 }
 
-float centerX = -0.0f;
-float v = 0.1f;
 long lastTime = 0;
+int i = 0;
 void onIdle() {
 	long time = glutGet(GLUT_ELAPSED_TIME);
-	if(doing){
-		camera.setCenter(vec2(centerX+=(v*((time-lastTime)*1.0/1000)), 0.0f));
-		if(fabs(centerX) > 1.0f) v*=-1;
-	
-	uni->pedal = uni->pedal + uni->v_pedal * (time-lastTime)/1000.0f;
-	if(uni->pedal > M_PI*2.0f) uni->pedal -= M_PI*2.0f;
-	if(uni->pedal < 0.0f) uni->pedal += M_PI*2.0f;
+	course->moveUnicycle((time - lastTime)/1000.0f);		
 	glutPostRedisplay();
-	}lastTime = time;
+	lastTime = time;
+}
+
+float currX = -1.0f;
+int orientation = 1;
+void Course::moveUnicycle(float elapsedTime)
+{
+	const float dt = 0.01f;
+	const float F = 0.1;
+	const float m = 0.005;
+	const float g = 10;
+	const float ro = 1.30;
+	float tangent;
+	float y = getY(currX, &tangent);
+	for(float t = 0; t < elapsedTime; t+=dt)
+	{
+		float Dt = fmin(dt, elapsedTime-t);
+		float v = (F-orientation*m*g*sinf(atanf(tangent))/ro);
+		float dx = v*Dt / sqrt(1+tangent*tangent);
+		uni->pedal -= orientation*v*Dt/uni->wheelSize*2;
+		uni->setHoldingPoint(vec2(currX+=orientation*dx, y = getY(currX, &tangent)), tangent);
+	}
+	if(currX>=1.0f)
+		orientation=-1;
+	else if(currX<=-1.0f)
+		orientation=1;
+	camera.setCenter(vec2(currX, y));
+
 }
