@@ -429,7 +429,7 @@ class Unicycle
 {
 	const int resolution = 100;
 	const int spokes = 7;
-	const float bodyLength = 0.15f;
+	const float bodyLength = 0.1f;
 	const float headSize = 0.025f;
   private:
 	unsigned int vbo;
@@ -481,7 +481,7 @@ class Unicycle
 				data.push_back(sinf(2.0f*M_PI/resolution*i)*wheelSize + center.y);
 			}
 		}
-		glLineWidth(2.0f);
+		glLineWidth(1.0f);
 		glBufferData(GL_ARRAY_BUFFER, data.size()*sizeof(float), data.data(), GL_DYNAMIC_DRAW);
 		glDrawArrays(GL_LINE_STRIP, 0, data.size()/2);
 
@@ -494,7 +494,7 @@ class Unicycle
 		data.push_back(b.y);
 		data.push_back(b.x);
 		data.push_back(b.y + bodyLength);
-		glLineWidth(3.0f);		
+		glLineWidth(4.0f);		
 		glBufferData(GL_ARRAY_BUFFER, data.size()*sizeof(float), data.data(), GL_STATIC_DRAW);
 		glDrawArrays(GL_LINE_STRIP, 0, data.size()/2);
 		data.clear();
@@ -529,7 +529,7 @@ class Unicycle
 		}
 		data.push_back(foot.x);
 		data.push_back(foot.y);
-		glLineWidth(2.0f);
+		glLineWidth(4.0f);
 		glBufferData(GL_ARRAY_BUFFER, data.size()*sizeof(float), data.data(), GL_STATIC_DRAW);
 		glDrawArrays(GL_LINE_STRIP, 0, data.size()/2);
 
@@ -618,8 +618,8 @@ int orientation = 1;
 void Course::moveUnicycle(float elapsedTime)
 {
 	const float dt = 0.01f;
-	const float F = 0.5;
-	const float m = 0.05;
+	const float F = 0.3;
+	const float m = 0.03;
 	const float g = 9.81;
 	const float ro = 1.3;
 	float tangent;
