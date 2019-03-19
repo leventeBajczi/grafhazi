@@ -618,10 +618,10 @@ int orientation = 1;
 void Course::moveUnicycle(float elapsedTime)
 {
 	const float dt = 0.01f;
-	const float F = 0.3;
-	const float m = 0.03;
-	const float g = 9.81;
-	const float ro = 1.3;
+	const float F = 0.4f;
+	const float m = 0.02f;
+	const float g = 9.81f;
+	const float ro = 1.0f;
 	float tangent;
 	float y = getY(currX, &tangent);
 	for(float t = 0; t < elapsedTime; t+=dt)
@@ -639,9 +639,9 @@ void Course::moveUnicycle(float elapsedTime)
 			orientation=1;
 		}
 		float Dt = fmin(dt, elapsedTime-t);
-		float v = (F-orientation*m*g*sinf(atanf(tangent))/ro);
+		float v = (F-orientation*m*g*sinf(atanf(tangent)))/ro;
 		float dx = v*Dt / sqrt(1+tangent*tangent);
-		uni->pedal -= orientation*v*Dt/uni->wheelSize*2;
+		uni->pedal -= orientation*v*Dt/uni->wheelSize;
 		currX+=orientation*dx;
 		y = getY(currX, &tangent);
 	}
