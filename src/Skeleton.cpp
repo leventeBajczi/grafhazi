@@ -578,12 +578,12 @@ void onDisplay() {
 
 	glutSwapBuffers();
 }
-bool doing = true;
+bool doing = false;
 
 void onKeyboard(unsigned char key, int pX, int pY) {
 	if (key == ' ')
 	{
-		doing = !doing;
+		doing = true;
 	} 
 
 }
@@ -621,7 +621,7 @@ void Course::moveUnicycle(float elapsedTime)
 	const float F = 0.5;
 	const float m = 0.05;
 	const float g = 9.81;
-	const float ro = 13;
+	const float ro = 1.3;
 	float tangent;
 	float y = getY(currX, &tangent);
 	for(float t = 0; t < elapsedTime; t+=dt)
@@ -646,6 +646,6 @@ void Course::moveUnicycle(float elapsedTime)
 		y = getY(currX, &tangent);
 	}
 	uni->setHoldingPoint(orientation, vec2(currX, y), tangent);
-	camera.setCenter(vec2(currX, y));
+	if(doing)camera.setCenter(vec2(currX, y));
 
 }
