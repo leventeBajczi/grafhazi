@@ -183,8 +183,8 @@ class ColouredDrawable : public Drawable
 		gprog->setTexturing(false);
 		bindVbo();
 		mat4 MVP = camera->getTranslationMatrix()*matrix;
-		MVP.SetUniform(gprog->getId(), "MVP");
-		color.SetUniform(gprog->getId(), "color");			
+		MVP.SetUniform(gprog->getId(), (char*)"MVP");
+		color.SetUniform(gprog->getId(), (char*)"color");			
 	}
 };
 
@@ -229,8 +229,8 @@ class TexturedDrawable : public Drawable
 				 0, 1, 0, 0,
 				 0, 0, 1, 0,
 				 0, 0, 0, 1};
-		MVP.SetUniform(gprog->getId(), "MVP");
-		if(texture) texture->SetUniform(gprog->getId(), "textureUnit");
+		MVP.SetUniform(gprog->getId(), (char*)"MVP");
+		if(texture) texture->SetUniform(gprog->getId(), (char*)"textureUnit");
 	}
 };
 
@@ -628,7 +628,7 @@ class UnicycleLeg : public ColouredDrawable
 		data.push_back(foot.x);
 		data.push_back(foot.y);
 		glLineWidth(4.0f);
-		glBufferData(GL_ARRAY_BUFFER, data.size()*sizeof(float), data.data(), GL_STATIC_DRAW);
+		glBufferData(GL_ARRAY_BUFFER, data.size()*sizeof(float), data.data(), GL_DYNAMIC_DRAW);
 		glDrawArrays(GL_LINE_STRIP, 0, data.size()/2);
 	}
 	void setBodyBottom(vec2 _bodyBottom)
@@ -742,7 +742,7 @@ class World
 	}
 	float getY(float _x, float* _tangent)
 	{
-		c->getY(_x, _tangent);
+		return c->getY(_x, _tangent);
 	}
 } world;
 
