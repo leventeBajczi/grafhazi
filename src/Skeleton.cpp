@@ -452,7 +452,7 @@ class Course : public ColouredDrawable, public KochanekBartels
 				}
 			}
 		}
-		return 1/0;
+		std::__throw_runtime_error("could not get Y!");
 	}
 
 	void draw()
@@ -707,7 +707,7 @@ class World
 	Course* c = nullptr;
 	Unicycle* u = nullptr;
   public:
-	void init()
+	World()
 	{
 		camera = new Camera();
 		gprog = new GpuProgramSwitcher();
@@ -745,19 +745,21 @@ class World
 	{
 		return c->getY(_x, _tangent);
 	}
-} world;
+};
+
+World* world;
 
 void onInitialization() {
 	srand(123);
 	glViewport(0, 0, windowWidth, windowHeight);
-	world.init();
+	world = new World();
 }
 
 void onDisplay() {
 	glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 	glClear(GL_COLOR_BUFFER_BIT);
 
-	world.draw();
+	world->draw();
 
 	glutSwapBuffers();
 }
@@ -776,7 +778,7 @@ void onMouse(int button, int state, int pX, int pY) {
 	{
 		float cX = 2.0f * pX / windowWidth - 1;
 		float cY = 1.0f - 2.0f * pY / windowHeight;	
-		world.addCP(vec2(cX, cY));
+		world->addCP(vec2(cX, cY));
 		glutPostRedisplay();
 	}
 }
@@ -792,29 +794,29 @@ void onIdle() {
 	const float g = 9.81f;
 	const float ro = 1.0f;
 	float tangent;
-	float y = world.getY(currX, &tangent);
+	float y = world->getY(currX, &tangent);
 	for(float t = 0; t < elapsedTime; t+=dt)
 	{
 		if(currX>=1.0f)
 		{
 			currX = 1.0f;
-			y = world.getY(currX, &tangent);
+			y = world->getY(currX, &tangent);
 			orientation=-1;
 		}
 		else if(currX<=-1.0f)
 		{
 			currX = -1.0f;
-			y = world.getY(currX, &tangent);
+			y = world->getY(currX, &tangent);
 			orientation=1;
 		}
 		float Dt = fmin(dt, elapsedTime-t);
 		float v = (F-orientation*m*g*sinf(atanf(tangent)))/ro;
 		float dx = v*Dt / sqrt(1+tangent*tangent);
-		world.setDPedal(-orientation*v*Dt);
+		world->setDPedal(-orientation*v*Dt);
 		currX+=orientation*dx;
-		y = world.getY(currX, &tangent);
+		y = world->getY(currX, &tangent);
 	}
-	world.setHoldingPoint(orientation, vec2(currX, y), tangent);
+	world->setHoldingPoint(orientation, vec2(currX, y), tangent);
 	if(doing)camera->setCenter(vec2(currX, y));
 	glutPostRedisplay();
 	lastTime = time;
