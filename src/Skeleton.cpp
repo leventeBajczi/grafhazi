@@ -31,6 +31,7 @@
 // Tudomasul veszem, hogy a forrasmegjeloles kotelmenek megsertese eseten a hazifeladatra adhato pontokat
 // negativ elojellel szamoljak el es ezzel parhuzamosan eljaras is indul velem szemben.
 //=============================================================================================
+
 #include "framework.h"
 #define EPS 1E-7
 const char * const vertexSource = R"(
@@ -617,12 +618,12 @@ class UnicycleLeg : public ColouredDrawable
 		float shift = sqrtf(wheelSize*0.75f*wheelSize*0.75f - length*length);
 		if(foot.x > 0.0f)
 		{
-			data.push_back(d.x + orientation*(shift*cosf(angle + M_PI/2)));		//itt valami nemjó..
+			data.push_back(d.x + orientation*(shift*cosf(angle + M_PI/2)));
 			data.push_back(d.y + orientation*(shift*sinf(angle + M_PI/2)));
 		}
 		else
 		{
-			data.push_back(d.x - orientation*(shift*cosf(angle + M_PI/2)));		//itt valami nemjó..
+			data.push_back(d.x - orientation*(shift*cosf(angle + M_PI/2)));
 			data.push_back(d.y - orientation*(shift*sinf(angle + M_PI/2)));
 		}
 		data.push_back(foot.x);
