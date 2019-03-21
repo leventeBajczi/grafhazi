@@ -375,14 +375,14 @@ class Hill : public KochanekBartels, public TexturedDrawable
 			{
 				if(2.0f * i / resolution - 1.0f > getData(2*j+1).y)
 				{
-					image[i*resolution + j] = vec4(0.2f, 0.2f, 0.6f, 1.0f);
+					image[i*resolution + j] = vec4(0.0667f, 0.737f, 1.0f, 1.0f);
 				}
 				else
 				{
 					if((i > 4*resolution / 5) || ((i > 2 * resolution / 3 ) && (i * 7.5f / resolution - 5 )*RAND_MAX >= rand() ))	
 						image[i*resolution + j] = vec4(1, 1, 1, 1);
 					else
-						image[i*resolution + j] = vec4(0.3f, 0.3f, 0.3f, 1.0f);
+						image[i*resolution + j] = vec4(0.6f, 0.6f, 0.6f, 1);
 				}
 			}
 		}
@@ -492,7 +492,7 @@ class UnicycleWheel : public ColouredDrawable
 	float pedal = 0;
   public:
 	UnicycleWheel(const int _spokes, const float _wheelSize):
-		ColouredDrawable(vec3(1.0f, 0.506f, 0.125f)),
+		ColouredDrawable(vec3(0.1f, 0.1f, 0.1f)),
 		spokes{_spokes},
 		wheelSize{_wheelSize}
 	{}
@@ -537,7 +537,7 @@ class UnicycleBody : public ColouredDrawable
 	std::vector<float> data;
   public:
 	UnicycleBody(const float _bodyLength) :
-		ColouredDrawable(vec3(0.011f, 1.0f, 0.475f)),
+		ColouredDrawable(vec3(0.659f, 0.047f, 0.2627f)),
 		bodyLength{_bodyLength}
 	{
 		data.push_back(0.0f);
@@ -567,7 +567,7 @@ class UnicycleHead : public ColouredDrawable
 	std::vector<float> data;
   public:
 	UnicycleHead(const float _headSize) :
-		ColouredDrawable(vec3(0.011f, 1.0f, 0.475f)),
+		ColouredDrawable(vec3(0.659f, 0.047f, 0.2627f)),
 		headSize{_headSize}
 	{
 		for(int i = 0; i<=resolution; i++)
@@ -599,7 +599,7 @@ class UnicycleLeg : public ColouredDrawable
 	int orientation = 1;
   public:
 	UnicycleLeg(float _phase, const float _wheelSize) :
-		ColouredDrawable(vec3(0.011f, 1.0f, 0.475f)),
+		ColouredDrawable(vec3(0.659f, 0.047f, 0.2627f)),
 		wheelSize{_wheelSize},
 		phase{_phase}
 	{
