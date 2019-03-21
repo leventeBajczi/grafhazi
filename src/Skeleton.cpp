@@ -416,12 +416,12 @@ class Course : public ColouredDrawable, public KochanekBartels
 	{}
 	float getY(float x, float* tangent)
 	{
-		if(getData(start_index).x > x)
+		if(getData(start_index).x >= x)
 		{
 			*tangent = 0.0f;
 			return getData(start_index).y;
 		}
-		else if(getData(stop_index).x < x)
+		else if(getData(stop_index).x <= x)
 		{
 			*tangent = 0.0f;
 			return getData(stop_index).y;
@@ -785,14 +785,15 @@ void onMouse(int button, int state, int pX, int pY) {
 long lastTime = 0;
 float currX = -1.0f;
 int orientation = 1;
+float v = 0.0;
 void onIdle() {
 	long time = glutGet(GLUT_ELAPSED_TIME);
 	float elapsedTime = (time - lastTime)/1000.0f;
 	const float dt = 0.01f;
-	const float F = 0.4f;
-	const float m = 0.02f;
+	const float F = 19.0f;
+	const float m = 2.0f;
 	const float g = 9.81f;
-	const float ro = 1.0f;
+	const float ro = 30.0f;
 	float tangent;
 	float y = world->getY(currX, &tangent);
 	for(float t = 0; t < elapsedTime; t+=dt)
@@ -802,18 +803,21 @@ void onIdle() {
 			currX = 1.0f;
 			y = world->getY(currX, &tangent);
 			orientation=-1;
+			v = 0.0;
 		}
 		else if(currX<=-1.0f)
 		{
 			currX = -1.0f;
 			y = world->getY(currX, &tangent);
 			orientation=1;
+			v = 0.0;
 		}
 		float Dt = fmin(dt, elapsedTime-t);
-		float v = (F-orientation*m*g*sinf(atanf(tangent)))/ro;
+		float fe = orientation*F - ro*v - m*g*sinf(atanf(tangent));
+		v += fe/m*Dt;
 		float dx = v*Dt / sqrt(1+tangent*tangent);
-		world->setDPedal(-orientation*v*Dt);
-		currX+=orientation*dx;
+		world->setDPedal(-v*Dt);
+		currX+=dx;
 		y = world->getY(currX, &tangent);
 	}
 	world->setHoldingPoint(orientation, vec2(currX, y), tangent);
