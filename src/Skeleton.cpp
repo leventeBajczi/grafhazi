@@ -1,5 +1,5 @@
 //=============================================================================================
-// Mintaprogram: Zold haromszog. Ervenyes 2018. osztol.
+// Mintaprogram: Z�ld h�romsz�g. Ervenyes 2018. osztol.
 //
 // A beadott program csak ebben a fajlban lehet, a fajl 1 byte-os ASCII karaktereket tartalmazhat, BOM kihuzando.
 // Tilos:
@@ -413,9 +413,15 @@ class Course : public ColouredDrawable, public KochanekBartels
 	Course() :
 		ColouredDrawable(vec3(0, 0, 0)),
 		KochanekBartels(-0.5f, 0.0f)
-	{}
+	{
+	}
 	float getY(float x, float* tangent)
 	{
+		if(dirty)
+		{
+			fillData();
+			dirty = false;
+		}
 		if(getData(start_index).x > x)
 		{
 			*tangent = 0.0f;
@@ -452,16 +458,12 @@ class Course : public ColouredDrawable, public KochanekBartels
 				}
 			}
 		}
-		std::__throw_runtime_error("could not get Y!");
+		return 2.0f;
 	}
 
-	void draw()
+	void fillData()
 	{
-		setMatrices();
-		if(dirty)
-		{
 			clearData();
-
 			putData(vec2(-1.0f, bottom));
 			putData(vec2(-2.0f, bottom));
 			putData(vec2(-2.0f, getFrontCP().y));
@@ -476,6 +478,14 @@ class Course : public ColouredDrawable, public KochanekBartels
 
 			putData(vec2(2.0f, getBackCP().y));
 			glBufferData(GL_ARRAY_BUFFER, getDataSize()*sizeof(vec2), getData(), GL_DYNAMIC_DRAW);
+	}
+
+	void draw()
+	{
+		setMatrices();
+		if(dirty)
+		{
+			fillData();
 			dirty = false;
 		}
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, getDataSize());
@@ -730,6 +740,7 @@ class World
 	{
 		delete h;
 		delete c;
+		delete u;
 		delete camera;
 		delete gprog;
 	}
@@ -750,8 +761,8 @@ class World
 World* world;
 
 void onInitialization() {
-	srand(123);
 	glViewport(0, 0, windowWidth, windowHeight);
+	srand(123);
 	world = new World();
 }
 
