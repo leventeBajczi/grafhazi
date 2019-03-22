@@ -419,6 +419,7 @@ class Course : public ColouredDrawable, public KochanekBartels
 	{
 		if(dirty)
 		{
+			bindVbo();
 			fillData();
 			dirty = false;
 		}
