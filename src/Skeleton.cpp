@@ -218,7 +218,6 @@ class TexturedDrawable : public Drawable
 	{
 		bindVbo(id);
 		glBufferData(GL_ARRAY_BUFFER, size*sizeof(float), (id ? uvs : coords), GL_STATIC_DRAW);
-		for(int i = 0; i<size; i++)
 		glEnableVertexAttribArray(id);
 		glVertexAttribPointer(id, 2, GL_FLOAT, GL_FALSE, 0,  reinterpret_cast<void*>(0)); 		
 	}
