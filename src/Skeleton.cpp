@@ -459,7 +459,7 @@ class Course : public ColouredDrawable, public KochanekBartels
 				}
 			}
 		}
-		return 2.0f;
+		std::__throw_runtime_error("No y was found for x");
 	}
 
 	void fillData()
