@@ -54,12 +54,14 @@ const char *fragmentSource = R"(
 	const int maxEllipsoids = 3;
 	const int maxMirrors = 10;
 	const float epsilon = 0.0001f;
+	const float PI = 3.1415926536;
 
 	uniform vec3 wEye; 
 	uniform Light light;     
-	uniform Material materials[4];
+	uniform Material materials[5];
 	uniform int nEllipsoids;
 	uniform int nMirrors;
+	uniform int matType;
 	uniform Ellipsoid ellipsoids[maxEllipsoids];
 	uniform Rectangle rectangles[maxMirrors];
 
@@ -76,7 +78,8 @@ const char *fragmentSource = R"(
 		float x = ray.start.x + ray.dir.x*t;
 		float y = ray.start.y + ray.dir.y*t;
 		float z = ray.start.z + ray.dir.z*t;
-		if(object.z_bounds.x > z || object.z_bounds.y < z) return hit;
+		float xy_bound = 2 / cos(PI/nMirrors);
+		if(object.z_bounds.x > z || object.z_bounds.y < z || abs(x) > xy_bound || abs(y) > xy_bound) return hit;
 		hit.t = t;
 		hit.position = ray.start + ray.dir * hit.t;
 		
@@ -123,7 +126,7 @@ const char *fragmentSource = R"(
 		}
 		for (int r = 0; r < nMirrors; r++) {
 			Hit hit = intersect(rectangles[r], ray);
-			hit.mat = 3;
+			hit.mat = matType;
 			if (hit.t > 0 && (bestHit.t < 0 || hit.t < bestHit.t))  bestHit = hit;
 		}
 		if (dot(ray.dir, bestHit.normal) > 0) bestHit.normal = bestHit.normal * (-1);
@@ -140,7 +143,7 @@ const char *fragmentSource = R"(
 		return F0 + (vec3(1, 1, 1) - F0) * pow(cosTheta, 5);
 	}
 
-	const int maxdepth = 50;
+	const int maxdepth = 16;
 
 	vec3 trace(Ray ray) {
 		vec3 weight = vec3(1, 1, 1);
@@ -236,9 +239,15 @@ public:
 };
 
 class SmoothMaterial : public Material {
+	float calcF0(float n, float k)
+	{
+		return ((n-1)*(n-1) + k*k)/((n+1)*(n+1) + k*k);
+	}
 public:
-	SmoothMaterial(vec3 _F0) {
-		F0 = _F0;
+	SmoothMaterial(vec3 n, vec3 k) {
+		F0.x = calcF0(n.x, k.x);
+		F0.y = calcF0(n.y, k.y);
+		F0.z = calcF0(n.z, k.z);
 		rough = false;
 		reflective = true;
 	}
@@ -275,7 +284,16 @@ struct Ellipsoid {
 
 	void Animate()
 	{
-		center = center + vec3(rnd()*0.1-0.05, rnd()*0.1-0.05, rnd()*0.1-0.05);
+		if(center.x > 2)
+			center.x -= rnd()*0.1;
+		else if(center.x < -2)
+			center.x += rnd()*0.1;
+		else if(center.y > 2)
+			center.y -= rnd()*0.1;
+		else if(center.y < -2)
+			center.y += rnd()*0.1;
+		else
+			center = center + vec3(rnd()*0.1-0.05, rnd()*0.1-0.05, rnd()*0.1-0.05);
 	}
 };
 
@@ -321,7 +339,9 @@ class Scene {
 	std::vector<Light *> lights;
 	Camera camera;
 	std::vector<Material *> materials;
+	bool gold = true;
 public:
+	void setGold(bool _gold){gold = _gold;}
 	void build() {
 		vec3 eye = vec3(0, 0, 2);
 		vec3 vup = vec3(0, 1, 0);
@@ -329,7 +349,7 @@ public:
 		float fov = 45 * M_PI / 180;
 		camera.set(eye, lookat, vup, fov);
 
-		lights.push_back(new Light(vec3(1, 1, 1), vec3(1, 1, 1), vec3(0.4, 0.3, 0.3)));
+		lights.push_back(new Light(vec3(1, 1, 1), vec3(1, 1, 1), vec3(1, 1, 1)));
 
 		ellipsoids.push_back(new Ellipsoid(vec3(-1+2*rnd(), -1+2*rnd(), -30), vec3((rnd() + 0.5) * 2, (rnd() + 0.5) * 2, (rnd() + 0.5) * 2)));
 		ellipsoids.push_back(new Ellipsoid(vec3(-1+2*rnd(), -1+2*rnd(), -30), vec3((rnd() + 0.5) * 2, (rnd() + 0.5) * 2, (rnd() + 0.5) * 2)));
@@ -342,12 +362,15 @@ public:
 		materials.push_back(new RoughMaterial(vec3(1, 0, 0), vec3(50, 50, 50), 50));
 		materials.push_back(new RoughMaterial(vec3(0, 1, 0), vec3(50, 50, 50), 50));
 		materials.push_back(new RoughMaterial(vec3(0, 0, 1), vec3(50, 50, 50), 50));
-		materials.push_back(new SmoothMaterial(vec3(0.9, 0.85, 0.8)));
+		materials.push_back(new SmoothMaterial(vec3(0.17, 0.35, 1.5), vec3(3.1, 2.7, 1.9)));
+		materials.push_back(new SmoothMaterial(vec3(0.14, 0.16, 0.13), vec3(4.1, 2.3, 3.1)));
 	}
 	void SetUniform(unsigned int shaderProg) {
 		int location = glGetUniformLocation(shaderProg, "nEllipsoids");
 		if (location >= 0) glUniform1i(location, ellipsoids.size()); else printf("uniform nEllipsoids cannot be set\n");
 		for (int o = 0; o < ellipsoids.size(); o++) ellipsoids[o]->SetUniform(shaderProg, o);
+		location = glGetUniformLocation(shaderProg, "matType");
+		if (location >= 0) glUniform1i(location, gold ? 3 : 4); else printf("uniform matType cannot be set\n");
 		location = glGetUniformLocation(shaderProg, "nMirrors");
 		if (location >= 0) glUniform1i(location, mirrors.size()); else printf("uniform nMirrors cannot be set\n");
 		for (int r = 0; r < mirrors.size(); r++) mirrors[r]->SetUniform(shaderProg, r);
@@ -364,7 +387,7 @@ public:
 			for(unsigned i = 0; i<=size; i++)
 			{
 				float alfa = (i * 1.0f/(size+1)) * 2 * M_PI;
-				mirrors.push_back(new Mirror(vec4(sinf(alfa), cosf(alfa), 0, 2), vec2(-25, 0)));				
+				mirrors.push_back(new Mirror(vec4(2*sinf(alfa), 2*cosf(alfa), 0, 4), vec2(-25, 0)));
 			}
 		}
 	}
@@ -436,6 +459,14 @@ void onKeyboardUp(unsigned char key, int pX, int pY) {
 	{
 		scene.AddMirror();
 		glutPostRedisplay();
+	}
+	else if (key == 'g')
+	{
+		scene.setGold(true);
+	}
+	else if (key == 's')
+	{
+		scene.setGold(false);
 	}
 
 }
