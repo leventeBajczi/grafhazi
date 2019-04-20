@@ -36,6 +36,11 @@ const char *fragmentSource = R"(
 		vec3 params;
 	};
 
+	struct Rectangle {
+		vec4 params;
+		vec2 z_bounds;
+	};
+
 	struct Hit {
 		float t;
 		vec3 position, normal;
@@ -46,21 +51,43 @@ const char *fragmentSource = R"(
 		vec3 start, dir;
 	};
 
-	const int nMaxObjects = 50;
+	const int maxEllipsoids = 3;
+	const int maxMirrors = 10;
+	const float epsilon = 0.0001f;
 
 	uniform vec3 wEye; 
 	uniform Light light;     
-	uniform Material materials[2];  // diffuse, specular, ambient ref
-	uniform int nObjects;
-	uniform Ellipsoid objects[nMaxObjects];
+	uniform Material materials[4];
+	uniform int nEllipsoids;
+	uniform int nMirrors;
+	uniform Ellipsoid ellipsoids[maxEllipsoids];
+	uniform Rectangle rectangles[maxMirrors];
 
-	in  vec3 p;					// point on camera window corresponding to the pixel
-	out vec4 fragmentColor;		// output that goes to the raster memory as told by glBindFragDataLocation
+	in  vec3 p;
+	out vec4 fragmentColor;
+
+	Hit intersect(const Rectangle object, const Ray ray) {
+		Hit hit;
+		hit.t = -1;
+
+		vec3 params3 = vec3(object.params.x, object.params.y, object.params.z);
+		if(abs(dot(params3, ray.dir)) < epsilon) return hit; // parallell
+		float t = -1 * dot(object.params, vec4(ray.start, 1))/dot(params3, ray.dir);
+		float x = ray.start.x + ray.dir.x*t;
+		float y = ray.start.y + ray.dir.y*t;
+		float z = ray.start.z + ray.dir.z*t;
+		if(object.z_bounds.x > z || object.z_bounds.y < z) return hit;
+		hit.t = t;
+		hit.position = ray.start + ray.dir * hit.t;
+		
+		hit.normal = normalize(params3);
+
+		return hit;
+	}
 
 	Hit intersect(const Ellipsoid object, const Ray ray) {
 		Hit hit;
 		hit.t = -1;
-		vec3 dist = ray.start - object.center;
 
 		vec3 dirsquare = vec3(ray.dir.x*ray.dir.x, ray.dir.y*ray.dir.y, ray.dir.z*ray.dir.z);
 		vec3 dirstart = vec3((ray.start.x-object.center.x)*ray.dir.x, (ray.start.y-object.center.y)*ray.dir.y, (ray.start.z-object.center.z)*ray.dir.z);
@@ -81,7 +108,7 @@ const char *fragmentSource = R"(
 		float n0 = -(hit.position.x-object.center.x)*object.params.x/((hit.position.z-object.center.z)*object.params.z);
 		float n1 = -(hit.position.y-object.center.y)*object.params.y/((hit.position.z-object.center.z)*object.params.z);
 		
-		hit.normal = normalize(vec3(n0, n1, -1)); // amennyiben nem lehet a normalize() fgv-t hasznalni, ez megegyezik azzal, hogy leosztjuk az egyes tagjait a vektor hosszaval, i.e. a sajat magaval vett dotproduct gyokevel.
+		hit.normal = normalize(vec3(n0, n1, -1));
 
 		return hit;
 	}
@@ -89,10 +116,14 @@ const char *fragmentSource = R"(
 	Hit firstIntersect(Ray ray) {
 		Hit bestHit;
 		bestHit.t = -1;
-		for (int o = 0; o < nObjects; o++) {
-			Hit hit = intersect(objects[o], ray); //  hit.t < 0 if no intersection
-			if (o < nObjects/2) hit.mat = 0;	 // half of the objects are rough
-			else			    hit.mat = 1;     // half of the objects are reflective
+		for (int o = 0; o < nEllipsoids; o++) {
+			Hit hit = intersect(ellipsoids[o], ray);
+			hit.mat = o;
+			if (hit.t > 0 && (bestHit.t < 0 || hit.t < bestHit.t))  bestHit = hit;
+		}
+		for (int r = 0; r < nMirrors; r++) {
+			Hit hit = intersect(rectangles[r], ray);
+			hit.mat = 3;
 			if (hit.t > 0 && (bestHit.t < 0 || hit.t < bestHit.t))  bestHit = hit;
 		}
 		if (dot(ray.dir, bestHit.normal) > 0) bestHit.normal = bestHit.normal * (-1);
@@ -100,7 +131,8 @@ const char *fragmentSource = R"(
 	}
 
 	bool shadowIntersect(Ray ray) {	// for directional lights
-		for (int o = 0; o < nObjects; o++) if (intersect(objects[o], ray).t > 0) return true; //  hit.t < 0 if no intersection
+		for (int o = 0; o < nEllipsoids; o++) if (intersect(ellipsoids[o], ray).t > 0) return true; //  hit.t < 0 if no intersection
+		for (int r = 0; r < nMirrors; r++) if (intersect(rectangles[r], ray).t > 0) return true; //  hit.t < 0 if no intersection
 		return false;
 	}
 
@@ -108,8 +140,7 @@ const char *fragmentSource = R"(
 		return F0 + (vec3(1, 1, 1) - F0) * pow(cosTheta, 5);
 	}
 
-	const float epsilon = 0.0001f;
-	const int maxdepth = 5;
+	const int maxdepth = 50;
 
 	vec3 trace(Ray ray) {
 		vec3 weight = vec3(1, 1, 1);
@@ -146,6 +177,8 @@ const char *fragmentSource = R"(
 		fragmentColor = vec4(trace(ray), 1); 
 	}
 )";
+
+float rnd() { return (float)rand() / RAND_MAX; }
 
 class Material {
 protected:
@@ -211,6 +244,22 @@ public:
 	}
 };
 
+struct Mirror {
+	vec4 params;
+	vec2 z_bounds;
+
+	Mirror(const vec4& _params, const vec2& _z_bounds) : params{_params}, z_bounds{_z_bounds} {}
+
+	void SetUniform(unsigned int shaderProg, int r) {
+		char buffer[256];
+		sprintf(buffer, "rectangles[%d].params", r);
+		params.SetUniform(shaderProg, buffer);
+		sprintf(buffer, "rectangles[%d].z_bounds", r);
+		z_bounds.SetUniform(shaderProg, buffer);
+	}
+	
+};
+
 struct Ellipsoid {
 	vec3 center, params;
 
@@ -218,10 +267,15 @@ struct Ellipsoid {
 	
 	void SetUniform(unsigned int shaderProg, int o) {
 		char buffer[256];
-		sprintf(buffer, "objects[%d].center", o);
+		sprintf(buffer, "ellipsoids[%d].center", o);
 		center.SetUniform(shaderProg, buffer);
-		sprintf(buffer, "objects[%d].params", o);
+		sprintf(buffer, "ellipsoids[%d].params", o);
 		params.SetUniform(shaderProg, buffer);
+	}
+
+	void Animate()
+	{
+		center = center + vec3(rnd()*0.1-0.05, rnd()*0.1-0.05, rnd()*0.1-0.05);
 	}
 };
 
@@ -261,10 +315,9 @@ struct Light {
 	}
 };
 
-float rnd() { return (float)rand() / RAND_MAX; }
-
 class Scene {
-	std::vector<Ellipsoid *> objects;
+	std::vector<Ellipsoid *> ellipsoids;
+	std::vector<Mirror *> mirrors;
 	std::vector<Light *> lights;
 	Camera camera;
 	std::vector<Material *> materials;
@@ -276,22 +329,51 @@ public:
 		float fov = 45 * M_PI / 180;
 		camera.set(eye, lookat, vup, fov);
 
-		lights.push_back(new Light(vec3(1, 1, 1), vec3(3, 3, 3), vec3(0.4, 0.3, 0.3)));
+		lights.push_back(new Light(vec3(1, 1, 1), vec3(1, 1, 1), vec3(0.4, 0.3, 0.3)));
 
-		vec3 kd(0.3f, 0.2f, 0.1f), ks(50, 50, 50);
-		for (int i = 0; i < 2; i++)
-			objects.push_back(new Ellipsoid(vec3(rnd() - 0.5, rnd() - 0.5, rnd() - 0.5), vec3((rnd() + 1) * 100, (rnd() + 1) * 100, (rnd() + 1) * 100)));
+		ellipsoids.push_back(new Ellipsoid(vec3(-1+2*rnd(), -1+2*rnd(), -30), vec3((rnd() + 0.5) * 2, (rnd() + 0.5) * 2, (rnd() + 0.5) * 2)));
+		ellipsoids.push_back(new Ellipsoid(vec3(-1+2*rnd(), -1+2*rnd(), -30), vec3((rnd() + 0.5) * 2, (rnd() + 0.5) * 2, (rnd() + 0.5) * 2)));
+		ellipsoids.push_back(new Ellipsoid(vec3(-1+2*rnd(), -1+2*rnd(), -30), vec3((rnd() + 0.5) * 2, (rnd() + 0.5) * 2, (rnd() + 0.5) * 2)));
 
-		materials.push_back(new RoughMaterial(kd, ks, 50));
+		AddMirror();
+		AddMirror();
+		AddMirror();
+
+		materials.push_back(new RoughMaterial(vec3(1, 0, 0), vec3(50, 50, 50), 50));
+		materials.push_back(new RoughMaterial(vec3(0, 1, 0), vec3(50, 50, 50), 50));
+		materials.push_back(new RoughMaterial(vec3(0, 0, 1), vec3(50, 50, 50), 50));
 		materials.push_back(new SmoothMaterial(vec3(0.9, 0.85, 0.8)));
 	}
 	void SetUniform(unsigned int shaderProg) {
-		int location = glGetUniformLocation(shaderProg, "nObjects");
-		if (location >= 0) glUniform1i(location, objects.size()); else printf("uniform nObjects cannot be set\n");
-		for (int o = 0; o < objects.size(); o++) objects[o]->SetUniform(shaderProg, o);
+		int location = glGetUniformLocation(shaderProg, "nEllipsoids");
+		if (location >= 0) glUniform1i(location, ellipsoids.size()); else printf("uniform nEllipsoids cannot be set\n");
+		for (int o = 0; o < ellipsoids.size(); o++) ellipsoids[o]->SetUniform(shaderProg, o);
+		location = glGetUniformLocation(shaderProg, "nMirrors");
+		if (location >= 0) glUniform1i(location, mirrors.size()); else printf("uniform nMirrors cannot be set\n");
+		for (int r = 0; r < mirrors.size(); r++) mirrors[r]->SetUniform(shaderProg, r);
 		lights[0]->SetUniform(shaderProg);
 		camera.SetUniform(shaderProg);
 		for (int mat = 0; mat < materials.size(); mat++) materials[mat]->SetUniform(shaderProg, mat);
+	}
+	void AddMirror()
+	{
+		unsigned int size = mirrors.size();
+		if(size < 10)
+		{
+			mirrors.clear();
+			for(unsigned i = 0; i<=size; i++)
+			{
+				float alfa = (i * 1.0f/(size+1)) * 2 * M_PI;
+				mirrors.push_back(new Mirror(vec4(sinf(alfa), cosf(alfa), 0, 2), vec2(-25, 0)));				
+			}
+		}
+	}
+	void Animate()
+	{
+		for(auto i : ellipsoids)
+		{
+			i->Animate();
+		}
 	}
 };
 
@@ -337,12 +419,6 @@ void onInitialization() {
 
 // Window has become invalid: Redraw
 void onDisplay() {
-	static int nFrames = 0;
-	nFrames++;
-	static long tStart = glutGet(GLUT_ELAPSED_TIME);
-	long tEnd = glutGet(GLUT_ELAPSED_TIME);
-	printf("%d msec\r", (tEnd - tStart) / nFrames);
-
 	glClearColor(1.0f, 0.5f, 0.8f, 1.0f);							// background color 
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear the screen
 	scene.SetUniform(gpuProgram.getId());
@@ -356,6 +432,11 @@ void onKeyboard(unsigned char key, int pX, int pY) {
 
 // Key of ASCII code released
 void onKeyboardUp(unsigned char key, int pX, int pY) {
+	if(key == 'a')
+	{
+		scene.AddMirror();
+		glutPostRedisplay();
+	}
 
 }
 
@@ -368,4 +449,8 @@ void onMouseMotion(int pX, int pY) {
 }
 
 // Idle event indicating that some time elapsed: do animation here
-void onIdle() {}
+void onIdle() 
+{
+	scene.Animate();
+	glutPostRedisplay();
+}
