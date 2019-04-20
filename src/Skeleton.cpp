@@ -33,6 +33,13 @@
 //=============================================================================================
 #include "framework.h"
 
+//forrasmegjeloles: A kod alapjakent a
+//http://cg.iit.bme.hu/portal/sites/default/files/oktatott%20t%C3%A1rgyak/sz%C3%A1m%C3%ADt%C3%B3g%C3%A9pes%20grafika/sug%C3%A1rk%C3%B6vet%C3%A9s/raytrace_0.cpp
+//linken megtalalhato peldaprogram szolgalt. Ez nem tudom beleszamit-e a targy
+//megengedett segedeszkozei koze, ezert lattam szukseget itt a hasznalatat kiemelni.
+//A kodsorok, amik a peldabol szarmaznak, vagy trivialisak, vagy fel vannak tuntetve 
+//a targy diasoran (ami viszont biztosan kivul esik a forrasmegjeloles szuksegessegen).
+
 const char * const vertexSource = R"(
     #version 330
     precision highp float;
@@ -393,9 +400,9 @@ public:
 		AddMirror();
 		AddMirror();
 
-		materials.push_back(new RoughMaterial(vec3(1, 0, 0), vec3(50, 50, 50), 50));
-		materials.push_back(new RoughMaterial(vec3(0, 1, 0), vec3(50, 50, 50), 50));
-		materials.push_back(new RoughMaterial(vec3(0, 0, 1), vec3(50, 50, 50), 50));
+		materials.push_back(new RoughMaterial(vec3(0.25, 0, 0), vec3(50, 50, 50), 50));
+		materials.push_back(new RoughMaterial(vec3(0, 0.5, 0), vec3(50, 50, 50), 50));
+		materials.push_back(new RoughMaterial(vec3(0, 0, 0.75), vec3(50, 50, 50), 50));
 		materials.push_back(new SmoothMaterial(vec3(0.17, 0.35, 1.5), vec3(3.1, 2.7, 1.9)));
 		materials.push_back(new SmoothMaterial(vec3(0.14, 0.16, 0.13), vec3(4.1, 2.3, 3.1)));
 	}
@@ -508,7 +515,7 @@ long lastTime = 0;
 void onIdle() {
     long time = glutGet(GLUT_ELAPSED_TIME);
     long elapsedTime = time - lastTime;
-    for(long l = 0; l<elapsedTime; l+=10) scene.Animate();
+    for(long l = 0; l<elapsedTime; l+=100) scene.Animate();
 	glutPostRedisplay();
     lastTime = time;
 }
