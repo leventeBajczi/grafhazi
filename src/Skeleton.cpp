@@ -1,23 +1,57 @@
+//=============================================================================================
+// Mintaprogram: Zöld háromszög. Ervenyes 2018. osztol.
+//
+// A beadott program csak ebben a fajlban lehet, a fajl 1 byte-os ASCII karaktereket tartalmazhat, BOM kihuzando.
+// Tilos:
+// - mast "beincludolni", illetve mas konyvtarat hasznalni
+// - faljmuveleteket vegezni a printf-et kiveve
+// - Mashonnan atvett programresszleteket forrasmegjeloles nelkul felhasznalni es
+// - felesleges programsorokat a beadott programban hagyni!!!!!!! 
+// - felesleges kommenteket a beadott programba irni a forrasmegjelolest kommentjeit kiveve
+// ---------------------------------------------------------------------------------------------
+// A feladatot ANSI C++ nyelvu forditoprogrammal ellenorizzuk, a Visual Studio-hoz kepesti elteresekrol
+// es a leggyakoribb hibakrol (pl. ideiglenes objektumot nem lehet referencia tipusnak ertekul adni)
+// a hazibeado portal ad egy osszefoglalot.
+// ---------------------------------------------------------------------------------------------
+// A feladatmegoldasokban csak olyan OpenGL fuggvenyek hasznalhatok, amelyek az oran a feladatkiadasig elhangzottak 
+// A keretben nem szereplo GLUT fuggvenyek tiltottak.
+//
+// NYILATKOZAT
+// ---------------------------------------------------------------------------------------------
+// Nev    : Bajczi Levente
+// Neptun : XAO5ER
+// ---------------------------------------------------------------------------------------------
+// ezennel kijelentem, hogy a feladatot magam keszitettem, es ha barmilyen segitseget igenybe vettem vagy
+// mas szellemi termeket felhasznaltam, akkor a forrast es az atvett reszt kommentekben egyertelmuen jeloltem.
+// A forrasmegjeloles kotelme vonatkozik az eloadas foliakat es a targy oktatoi, illetve a
+// grafhazi doktor tanacsait kiveve barmilyen csatornan (szoban, irasban, Interneten, stb.) erkezo minden egyeb
+// informaciora (keplet, program, algoritmus, stb.). Kijelentem, hogy a forrasmegjelolessel atvett reszeket is ertem,
+// azok helyessegere matematikai bizonyitast tudok adni. Tisztaban vagyok azzal, hogy az atvett reszek nem szamitanak
+// a sajat kontribucioba, igy a feladat elfogadasarol a tobbi resz mennyisege es minosege alapjan szuletik dontes.
+// Tudomasul veszem, hogy a forrasmegjeloles kotelmenek megsertese eseten a hazifeladatra adhato pontokat
+// negativ elojellel szamoljak el es ezzel parhuzamosan eljaras is indul velem szemben.
+//=============================================================================================
 #include "framework.h"
 
-const char *vertexSource = R"(
-	#version 450
+const char * const vertexSource = R"(
+    #version 330
     precision highp float;
 
-	uniform vec3 wLookAt, wRight, wUp;
+    uniform vec3 wLookAt, wRight, wUp;
 
-	layout(location = 0) in vec2 cCamWindowVertex;
-	out vec3 p;
+    layout(location = 0) in vec2 cCamWindowVertex;
+    out vec3 p;
 
-	void main() {
-		gl_Position = vec4(cCamWindowVertex, 0, 1);
-		p = wLookAt + wRight * cCamWindowVertex.x + wUp * cCamWindowVertex.y;
-	}
+    void main() {
+        gl_Position = vec4(cCamWindowVertex, 0, 1);
+        p = wLookAt + wRight * cCamWindowVertex.x + wUp * cCamWindowVertex.y;
+    }
 )";
 
-const char *fragmentSource = R"(
-	#version 450
+const char * const fragmentSource = R"(
+    #version 330
     precision highp float;
+    
 
 	struct Material {
 		vec3 ka, kd, ks;
@@ -44,7 +78,7 @@ const char *fragmentSource = R"(
 	struct Hit {
 		float t;
 		vec3 position, normal;
-		int mat;	// material index
+		int mat;
 	};
 
 	struct Ray {
@@ -73,7 +107,7 @@ const char *fragmentSource = R"(
 		hit.t = -1;
 
 		vec3 params3 = vec3(object.params.x, object.params.y, object.params.z);
-		if(abs(dot(params3, ray.dir)) < epsilon) return hit; // parallell
+		if(abs(dot(params3, ray.dir)) < epsilon) return hit;
 		float t = -1 * dot(object.params, vec4(ray.start, 1))/dot(params3, ray.dir);
 		float x = ray.start.x + ray.dir.x*t;
 		float y = ray.start.y + ray.dir.y*t;
@@ -102,7 +136,7 @@ const char *fragmentSource = R"(
 		float discr = b * b - 4.0 * a * c;
 		if (discr < 0) return hit;
 		float sqrt_discr = sqrt(discr);
-		float t1 = (-b + sqrt_discr) / 2.0 / a;	// t1 >= t2 for sure
+		float t1 = (-b + sqrt_discr) / 2.0 / a;
 		float t2 = (-b - sqrt_discr) / 2.0 / a;
 		if (t1 <= 0) return hit;
 		hit.t = (t2 > 0) ? t2 : t1;
@@ -133,9 +167,9 @@ const char *fragmentSource = R"(
 		return bestHit;
 	}
 
-	bool shadowIntersect(Ray ray) {	// for directional lights
-		for (int o = 0; o < nEllipsoids; o++) if (intersect(ellipsoids[o], ray).t > 0) return true; //  hit.t < 0 if no intersection
-		for (int r = 0; r < nMirrors; r++) if (intersect(rectangles[r], ray).t > 0) return true; //  hit.t < 0 if no intersection
+	bool shadowIntersect(Ray ray) {
+		for (int o = 0; o < nEllipsoids; o++) if (intersect(ellipsoids[o], ray).t > 0) return true;
+		for (int r = 0; r < nMirrors; r++) if (intersect(rectangles[r], ray).t > 0) return true;
 		return false;
 	}
 
@@ -400,61 +434,52 @@ public:
 	}
 };
 
-GPUProgram gpuProgram; // vertex and fragment shaders
+GPUProgram gpuProgram;
 Scene scene;
 
 class FullScreenTexturedQuad {
-	unsigned int vao;	// vertex array object id and texture id
+	unsigned int vao;
 public:
 	void Create() {
-		glGenVertexArrays(1, &vao);	// create 1 vertex array object
-		glBindVertexArray(vao);		// make it active
+		glGenVertexArrays(1, &vao);
+		glBindVertexArray(vao);
 
-		unsigned int vbo;		// vertex buffer objects
-		glGenBuffers(1, &vbo);	// Generate 1 vertex buffer objects
+		unsigned int vbo;
+		glGenBuffers(1, &vbo);
 
-		// vertex coordinates: vbo0 -> Attrib Array 0 -> vertexPosition of the vertex shader
-		glBindBuffer(GL_ARRAY_BUFFER, vbo); // make it active, it is an array
-		float vertexCoords[] = { -1, -1,  1, -1,  1, 1,  -1, 1 };	// two triangles forming a quad
-		glBufferData(GL_ARRAY_BUFFER, sizeof(vertexCoords), vertexCoords, GL_STATIC_DRAW);	   // copy to that part of the memory which is not modified 
+		glBindBuffer(GL_ARRAY_BUFFER, vbo);
+		float vertexCoords[] = { -1, -1,  1, -1,  1, 1,  -1, 1 };
+		glBufferData(GL_ARRAY_BUFFER, sizeof(vertexCoords), vertexCoords, GL_STATIC_DRAW);
 		glEnableVertexAttribArray(0);
-		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, NULL);     // stride and offset: it is tightly packed
+		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, NULL);
 	}
 
 	void Draw() {
-		glBindVertexArray(vao);	// make the vao and its vbos active playing the role of the data source
-		glDrawArrays(GL_TRIANGLE_FAN, 0, 4);	// draw two triangles forming a quad
+		glBindVertexArray(vao);
+		glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
 	}
 };
 
 FullScreenTexturedQuad fullScreenTexturedQuad;
 
-// Initialization, create an OpenGL context
 void onInitialization() {
 	glViewport(0, 0, windowWidth, windowHeight);
 	scene.build();
 	fullScreenTexturedQuad.Create();
 
-	// create program for the GPU
 	gpuProgram.Create(vertexSource, fragmentSource, "fragmentColor");
 	gpuProgram.Use();
 }
 
-// Window has become invalid: Redraw
 void onDisplay() {
-	glClearColor(1.0f, 0.5f, 0.8f, 1.0f);							// background color 
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear the screen
+	glClearColor(0, 0, 0, 1.0f);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	scene.SetUniform(gpuProgram.getId());
 	fullScreenTexturedQuad.Draw();
-	glutSwapBuffers();									// exchange the two buffers
+	glutSwapBuffers();
 }
 
-// Key of ASCII code pressed
 void onKeyboard(unsigned char key, int pX, int pY) {
-}
-
-// Key of ASCII code released
-void onKeyboardUp(unsigned char key, int pX, int pY) {
 	if(key == 'a')
 	{
 		scene.AddMirror();
@@ -463,25 +488,27 @@ void onKeyboardUp(unsigned char key, int pX, int pY) {
 	else if (key == 'g')
 	{
 		scene.setGold(true);
+        glutPostRedisplay();
 	}
 	else if (key == 's')
 	{
 		scene.setGold(false);
+        glutPostRedisplay();
 	}
-
 }
 
-// Mouse click event
-void onMouse(int button, int state, int pX, int pY) {
-}
+void onKeyboardUp(unsigned char key, int pX, int pY) {}
 
-// Move mouse with key pressed
-void onMouseMotion(int pX, int pY) {
-}
+void onMouseMotion(int pX, int pY) {}
 
-// Idle event indicating that some time elapsed: do animation here
-void onIdle() 
-{
-	scene.Animate();
+void onMouse(int button, int state, int pX, int pY) {}
+
+long lastTime = 0;
+
+void onIdle() {
+    long time = glutGet(GLUT_ELAPSED_TIME);
+    long elapsedTime = time - lastTime;
+    for(long l = 0; l<elapsedTime; l+=10) scene.Animate();
 	glutPostRedisplay();
+    lastTime = time;
 }
