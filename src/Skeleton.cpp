@@ -1,521 +1,741 @@
 //=============================================================================================
-// Mintaprogram: Zöld háromszög. Ervenyes 2018. osztol.
-//
-// A beadott program csak ebben a fajlban lehet, a fajl 1 byte-os ASCII karaktereket tartalmazhat, BOM kihuzando.
-// Tilos:
-// - mast "beincludolni", illetve mas konyvtarat hasznalni
-// - faljmuveleteket vegezni a printf-et kiveve
-// - Mashonnan atvett programresszleteket forrasmegjeloles nelkul felhasznalni es
-// - felesleges programsorokat a beadott programban hagyni!!!!!!! 
-// - felesleges kommenteket a beadott programba irni a forrasmegjelolest kommentjeit kiveve
-// ---------------------------------------------------------------------------------------------
-// A feladatot ANSI C++ nyelvu forditoprogrammal ellenorizzuk, a Visual Studio-hoz kepesti elteresekrol
-// es a leggyakoribb hibakrol (pl. ideiglenes objektumot nem lehet referencia tipusnak ertekul adni)
-// a hazibeado portal ad egy osszefoglalot.
-// ---------------------------------------------------------------------------------------------
-// A feladatmegoldasokban csak olyan OpenGL fuggvenyek hasznalhatok, amelyek az oran a feladatkiadasig elhangzottak 
-// A keretben nem szereplo GLUT fuggvenyek tiltottak.
-//
-// NYILATKOZAT
-// ---------------------------------------------------------------------------------------------
-// Nev    : Bajczi Levente
-// Neptun : XAO5ER
-// ---------------------------------------------------------------------------------------------
-// ezennel kijelentem, hogy a feladatot magam keszitettem, es ha barmilyen segitseget igenybe vettem vagy
-// mas szellemi termeket felhasznaltam, akkor a forrast es az atvett reszt kommentekben egyertelmuen jeloltem.
-// A forrasmegjeloles kotelme vonatkozik az eloadas foliakat es a targy oktatoi, illetve a
-// grafhazi doktor tanacsait kiveve barmilyen csatornan (szoban, irasban, Interneten, stb.) erkezo minden egyeb
-// informaciora (keplet, program, algoritmus, stb.). Kijelentem, hogy a forrasmegjelolessel atvett reszeket is ertem,
-// azok helyessegere matematikai bizonyitast tudok adni. Tisztaban vagyok azzal, hogy az atvett reszek nem szamitanak
-// a sajat kontribucioba, igy a feladat elfogadasarol a tobbi resz mennyisege es minosege alapjan szuletik dontes.
-// Tudomasul veszem, hogy a forrasmegjeloles kotelmenek megsertese eseten a hazifeladatra adhato pontokat
-// negativ elojellel szamoljak el es ezzel parhuzamosan eljaras is indul velem szemben.
+// Computer Graphics Sample Program: 3D engine-let
+// Shader: Gouraud, Phong, NPR
+// Material: diffuse + Phong-Blinn
+// Texture: CPU-procedural
+// Geometry: sphere, torus, mobius
+// Camera: perspective
+// Light: point
 //=============================================================================================
 #include "framework.h"
 
-//forrasmegjeloles: A kod alapjakent a
-//http://cg.iit.bme.hu/portal/sites/default/files/oktatott%20t%C3%A1rgyak/sz%C3%A1m%C3%ADt%C3%B3g%C3%A9pes%20grafika/sug%C3%A1rk%C3%B6vet%C3%A9s/raytrace_0.cpp
-//linken megtalalhato peldaprogram szolgalt. Ez nem tudom beleszamit-e a targy
-//megengedett segedeszkozei koze, ezert lattam szukseget itt a hasznalatat kiemelni.
-//A kodsorok, amik a peldabol szarmaznak, vagy trivialisak, vagy fel vannak tuntetve 
-//a targy diasoran (ami viszont biztosan kivul esik a forrasmegjeloles szuksegessegen).
+const int tessellationLevel = 20;
 
-const char * const vertexSource = R"(
-    #version 330
-    precision highp float;
-
-    uniform vec3 wLookAt, wRight, wUp;
-
-    layout(location = 0) in vec2 cCamWindowVertex;
-    out vec3 p;
-
-    void main() {
-        gl_Position = vec4(cCamWindowVertex, 0, 1);
-        p = wLookAt + wRight * cCamWindowVertex.x + wUp * cCamWindowVertex.y;
-    }
-)";
-
-const char * const fragmentSource = R"(
-    #version 330
-    precision highp float;
-    
-
-	struct Material {
-		vec3 ka, kd, ks;
-		float  shininess;
-		vec3 F0;
-		int rough, reflective;
-	};
-
-	struct Light {
-		vec3 direction;
-		vec3 Le, La;
-	};
-
-	struct Ellipsoid {
-		vec3 center;
-		vec3 params;
-	};
-
-	struct Rectangle {
-		vec4 params;
-		vec2 z_bounds;
-	};
-
-	struct Hit {
-		float t;
-		vec3 position, normal;
-		int mat;
-	};
-
-	struct Ray {
-		vec3 start, dir;
-	};
-
-	const int maxEllipsoids = 3;
-	const int maxMirrors = 10;
-	const float epsilon = 0.0001f;
-	const float PI = 3.1415926536;
-
-	uniform vec3 wEye; 
-	uniform Light light;     
-	uniform Material materials[5];
-	uniform int nEllipsoids;
-	uniform int nMirrors;
-	uniform int matType;
-	uniform Ellipsoid ellipsoids[maxEllipsoids];
-	uniform Rectangle rectangles[maxMirrors];
-
-	in  vec3 p;
-	out vec4 fragmentColor;
-
-	Hit intersect(const Rectangle object, const Ray ray) {
-		Hit hit;
-		hit.t = -1;
-
-		vec3 params3 = vec3(object.params.x, object.params.y, object.params.z);
-		if(abs(dot(params3, ray.dir)) < epsilon) return hit;
-		float t = -1 * dot(object.params, vec4(ray.start, 1))/dot(params3, ray.dir);
-		float x = ray.start.x + ray.dir.x*t;
-		float y = ray.start.y + ray.dir.y*t;
-		float z = ray.start.z + ray.dir.z*t;
-		float xy_bound = 2 / cos(PI/nMirrors);
-		if(object.z_bounds.x > z || object.z_bounds.y < z || abs(x) > xy_bound || abs(y) > xy_bound) return hit;
-		hit.t = t;
-		hit.position = ray.start + ray.dir * hit.t;
-		
-		hit.normal = normalize(params3);
-
-		return hit;
-	}
-
-	Hit intersect(const Ellipsoid object, const Ray ray) {
-		Hit hit;
-		hit.t = -1;
-
-		vec3 dirsquare = vec3(ray.dir.x*ray.dir.x, ray.dir.y*ray.dir.y, ray.dir.z*ray.dir.z);
-		vec3 dirstart = vec3((ray.start.x-object.center.x)*ray.dir.x, (ray.start.y-object.center.y)*ray.dir.y, (ray.start.z-object.center.z)*ray.dir.z);
-		vec3 startsquare = vec3((ray.start.x-object.center.x)*(ray.start.x-object.center.x), (ray.start.y-object.center.y)*(ray.start.y-object.center.y), (ray.start.z-object.center.z)*(ray.start.z-object.center.z));
-
-		float a = dot(object.params, dirsquare);
-		float b = dot(dirstart, object.params) * 2.0;
-		float c = dot(startsquare, object.params) - 1;
-		float discr = b * b - 4.0 * a * c;
-		if (discr < 0) return hit;
-		float sqrt_discr = sqrt(discr);
-		float t1 = (-b + sqrt_discr) / 2.0 / a;
-		float t2 = (-b - sqrt_discr) / 2.0 / a;
-		if (t1 <= 0) return hit;
-		hit.t = (t2 > 0) ? t2 : t1;
-		hit.position = ray.start + ray.dir * hit.t;
-		
-		float n0 = -(hit.position.x-object.center.x)*object.params.x/((hit.position.z-object.center.z)*object.params.z);
-		float n1 = -(hit.position.y-object.center.y)*object.params.y/((hit.position.z-object.center.z)*object.params.z);
-		
-		hit.normal = normalize(vec3(n0, n1, -1));
-
-		return hit;
-	}
-
-	Hit firstIntersect(Ray ray) {
-		Hit bestHit;
-		bestHit.t = -1;
-		for (int o = 0; o < nEllipsoids; o++) {
-			Hit hit = intersect(ellipsoids[o], ray);
-			hit.mat = o;
-			if (hit.t > 0 && (bestHit.t < 0 || hit.t < bestHit.t))  bestHit = hit;
-		}
-		for (int r = 0; r < nMirrors; r++) {
-			Hit hit = intersect(rectangles[r], ray);
-			hit.mat = matType;
-			if (hit.t > 0 && (bestHit.t < 0 || hit.t < bestHit.t))  bestHit = hit;
-		}
-		if (dot(ray.dir, bestHit.normal) > 0) bestHit.normal = bestHit.normal * (-1);
-		return bestHit;
-	}
-
-	bool shadowIntersect(Ray ray) {
-		for (int o = 0; o < nEllipsoids; o++) if (intersect(ellipsoids[o], ray).t > 0) return true;
-		for (int r = 0; r < nMirrors; r++) if (intersect(rectangles[r], ray).t > 0) return true;
-		return false;
-	}
-
-	vec3 Fresnel(vec3 F0, float cosTheta) { 
-		return F0 + (vec3(1, 1, 1) - F0) * pow(cosTheta, 5);
-	}
-
-	const int maxdepth = 16;
-
-	vec3 trace(Ray ray) {
-		vec3 weight = vec3(1, 1, 1);
-		vec3 outRadiance = vec3(0, 0, 0);
-		for(int d = 0; d < maxdepth; d++) {
-			Hit hit = firstIntersect(ray);
-			if (hit.t < 0) return weight * light.La;
-			if (materials[hit.mat].rough == 1) {
-				outRadiance += weight * materials[hit.mat].ka * light.La;
-				Ray shadowRay;
-				shadowRay.start = hit.position + hit.normal * epsilon;
-				shadowRay.dir = light.direction;
-				float cosTheta = dot(hit.normal, light.direction);
-				if (cosTheta > 0 && !shadowIntersect(shadowRay)) {
-					outRadiance += weight * light.Le * materials[hit.mat].kd * cosTheta;
-					vec3 halfway = normalize(-ray.dir + light.direction);
-					float cosDelta = dot(hit.normal, halfway);
-					if (cosDelta > 0) outRadiance += weight * light.Le * materials[hit.mat].ks * pow(cosDelta, materials[hit.mat].shininess);
-				}
-			}
-
-			if (materials[hit.mat].reflective == 1) {
-				weight *= Fresnel(materials[hit.mat].F0, dot(-ray.dir, hit.normal));
-				ray.start = hit.position + hit.normal * epsilon;
-				ray.dir = reflect(ray.dir, hit.normal);
-			} else return outRadiance;
-		}
-	}
-
-	void main() {
-		Ray ray;
-		ray.start = wEye; 
-		ray.dir = normalize(p - wEye);
-		fragmentColor = vec4(trace(ray), 1); 
-	}
-)";
-
-float rnd() { return (float)rand() / RAND_MAX; }
-
-class Material {
-protected:
-	vec3 ka, kd, ks;
-	float  shininess;
-	vec3 F0;
-	bool rough, reflective;
+//---------------------------
+struct Camera { // 3D camera
+//---------------------------
+	vec3 wEye, wLookat, wVup;   // extinsic
+	float fov, asp, fp, bp;		// intrinsic
 public:
-	Material RoughMaterial(vec3 _kd, vec3 _ks, float _shininess) {
-		ka = _kd * M_PI;
-		kd = _kd;
-		ks = _ks;
-		shininess = _shininess;
-		rough = true;
-		reflective = false;
+	Camera() {
+		asp = (float)windowWidth/windowHeight;
+		fov = 75.0f * (float)M_PI / 180.0f;
+		fp = 1; bp = 10;
 	}
-	Material SmoothMaterial(vec3 _F0) {
-		F0 = _F0;
-		rough = false;
-		reflective = true;
+	mat4 V() { // view matrix: translates the center to the origin
+		vec3 w = normalize(wEye - wLookat);
+		vec3 u = normalize(cross(wVup, w));
+		vec3 v = cross(w, u);
+		return TranslateMatrix(wEye * (-1)) * mat4(u.x, v.x, w.x, 0,
+											 u.y, v.y, w.y, 0,
+											 u.z, v.z, w.z, 0,
+											 0,   0,   0,   1);
 	}
-	void SetUniform(unsigned int shaderProg, int mat) {
+	mat4 P() { // projection matrix
+		return mat4(1 / (tan(fov / 2)*asp), 0, 0, 0,
+					0, 1 / tan(fov / 2), 0, 0,
+					0, 0, -(fp + bp) / (bp - fp), -1,
+					0, 0, -2 * fp*bp / (bp - fp), 0);
+	}
+	void Animate(float t) { }
+};
+
+//---------------------------
+struct Material {
+//---------------------------
+	vec3 kd, ks, ka;
+	float shininess;
+
+	void SetUniform(unsigned shaderProg, char * name) {
 		char buffer[256];
-		sprintf(buffer, "materials[%d].ka", mat);
-		ka.SetUniform(shaderProg, buffer);
-		sprintf(buffer, "materials[%d].kd", mat);
+		sprintf(buffer, "%s.kd", name);
 		kd.SetUniform(shaderProg, buffer);
-		sprintf(buffer, "materials[%d].ks", mat);
+
+		sprintf(buffer, "%s.ks", name);
 		ks.SetUniform(shaderProg, buffer);
-		sprintf(buffer, "materials[%d].shininess", mat);
+
+		sprintf(buffer, "%s.ka", name);
+		ka.SetUniform(shaderProg, buffer);
+
+		sprintf(buffer, "%s.shininess", name);
 		int location = glGetUniformLocation(shaderProg, buffer);
-		if (location >= 0) glUniform1f(location, shininess); else printf("uniform material.shininess cannot be set\n");
-		sprintf(buffer, "materials[%d].F0", mat);
-		F0.SetUniform(shaderProg, buffer);
-
-		sprintf(buffer, "materials[%d].rough", mat);
-		location = glGetUniformLocation(shaderProg, buffer);
-		if (location >= 0) glUniform1i(location, rough ? 1 : 0); else printf("uniform material.rough cannot be set\n");
-		sprintf(buffer, "materials[%d].reflective", mat);
-		location = glGetUniformLocation(shaderProg, buffer);
-		if (location >= 0) glUniform1i(location, reflective ? 1 : 0); else printf("uniform material.reflective cannot be set\n");
+		if (location >= 0) glUniform1f(location, shininess); else printf("uniform shininess cannot be set\n");
 	}
 };
 
-class RoughMaterial : public Material {
-public:
-	RoughMaterial(vec3 _kd, vec3 _ks, float _shininess) {
-		ka = _kd * M_PI;
-		kd = _kd;
-		ks = _ks;
-		shininess = _shininess;
-		rough = true;
-		reflective = false;
-	}
-};
-
-class SmoothMaterial : public Material {
-	float calcF0(float n, float k)
-	{
-		return ((n-1)*(n-1) + k*k)/((n+1)*(n+1) + k*k);
-	}
-public:
-	SmoothMaterial(vec3 n, vec3 k) {
-		F0.x = calcF0(n.x, k.x);
-		F0.y = calcF0(n.y, k.y);
-		F0.z = calcF0(n.z, k.z);
-		rough = false;
-		reflective = true;
-	}
-};
-
-struct Mirror {
-	vec4 params;
-	vec2 z_bounds;
-
-	Mirror(const vec4& _params, const vec2& _z_bounds) : params{_params}, z_bounds{_z_bounds} {}
-
-	void SetUniform(unsigned int shaderProg, int r) {
-		char buffer[256];
-		sprintf(buffer, "rectangles[%d].params", r);
-		params.SetUniform(shaderProg, buffer);
-		sprintf(buffer, "rectangles[%d].z_bounds", r);
-		z_bounds.SetUniform(shaderProg, buffer);
-	}
-	
-};
-
-struct Ellipsoid {
-	vec3 center, params;
-
-	Ellipsoid(const vec3& _center, const vec3& _params) : center{_center}, params{_params}{}
-	
-	void SetUniform(unsigned int shaderProg, int o) {
-		char buffer[256];
-		sprintf(buffer, "ellipsoids[%d].center", o);
-		center.SetUniform(shaderProg, buffer);
-		sprintf(buffer, "ellipsoids[%d].params", o);
-		params.SetUniform(shaderProg, buffer);
-	}
-
-	void Animate()
-	{
-		if(center.x > 2)
-			center.x -= rnd()*0.1;
-		else if(center.x < -2)
-			center.x += rnd()*0.1;
-		else if(center.y > 2)
-			center.y -= rnd()*0.1;
-		else if(center.y < -2)
-			center.y += rnd()*0.1;
-		else
-			center = center + vec3(rnd()*0.1-0.05, rnd()*0.1-0.05, rnd()*0.1-0.05);
-	}
-};
-
-class Camera {
-	vec3 eye, lookat, right, up;
-	float fov;
-public:
-	void set(vec3 _eye, vec3 _lookat, vec3 vup, double _fov) {
-		eye = _eye;
-		lookat = _lookat;
-		fov = _fov;
-		vec3 w = eye - lookat;
-		float f = length(w);
-		right = normalize(cross(vup, w)) * f * tan(fov / 2);
-		up = normalize(cross(w, right)) * f * tan(fov / 2);
-	}
-
-	void SetUniform(unsigned int shaderProg) {
-		eye.SetUniform(shaderProg, "wEye");
-		lookat.SetUniform(shaderProg, "wLookAt");
-		right.SetUniform(shaderProg, "wRight");
-		up.SetUniform(shaderProg, "wUp");
-	}
-};
-
+//---------------------------
 struct Light {
-	vec3 direction;
-	vec3 Le, La;
-	Light(vec3 _direction, vec3 _Le, vec3 _La) {
-		direction = normalize(_direction);
-		Le = _Le; La = _La;
-	}
-	void SetUniform(unsigned int shaderProg) {
-		La.SetUniform(shaderProg, "light.La");
-		Le.SetUniform(shaderProg, "light.Le");
-		direction.SetUniform(shaderProg, "light.direction");
+//---------------------------
+	vec3 La, Le;
+	vec4 wLightPos;
+
+	void Animate(float t) {	}
+
+	void SetUniform(unsigned shaderProg, char * name) {
+		char buffer[256];
+		sprintf(buffer, "%s.La", name);
+		La.SetUniform(shaderProg, buffer);
+
+		sprintf(buffer, "%s.Le", name);
+		Le.SetUniform(shaderProg, buffer);
+
+		sprintf(buffer, "%s.wLightPos", name);
+		wLightPos.SetUniform(shaderProg, buffer);
 	}
 };
 
-class Scene {
-	std::vector<Ellipsoid *> ellipsoids;
-	std::vector<Mirror *> mirrors;
-	std::vector<Light *> lights;
-	Camera camera;
-	std::vector<Material *> materials;
-	bool gold = true;
+//---------------------------
+struct CheckerBoardTexture : public Texture {
+//---------------------------
+	CheckerBoardTexture(const int width = 0, const int height = 0) : Texture() {
+		glBindTexture(GL_TEXTURE_2D, textureId);    // binding
+		std::vector<vec3> image(width * height);
+		const vec3 yellow(1, 1, 0), blue(0, 0, 1);
+		for (int x = 0; x < width; x++) for (int y = 0; y < height; y++) {
+			image[y * width + x] = (x & 1) ^ (y & 1) ? yellow : blue;
+		}
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_FLOAT, &image[0]); //Texture->OpenGL
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	}
+};
+//---------------------------
+struct LadyBugTexture : public Texture {
+//---------------------------
+	LadyBugTexture(const int width = 0, const int height = 0) : Texture() {
+		glBindTexture(GL_TEXTURE_2D, textureId);    // binding
+		std::vector<vec3> image(width * height);
+		const vec3 red(1, 0, 0), black(0, 0, 0);
+		for (int x = 0; x < width; x++) for (int y = 0; y < height; y++) {
+			image[y * width + x] = 
+				x < width/4 || x > width*3/4 ||
+				x == width*4/10 && y % (height/5) == 0 && y > height / 5 && y <= height * 4 / 5 ||
+				x == width*6/10 && y % (height/5) == 0 && y > height / 5 && y <= height * 4 / 5 ||
+				x == width/2 && y == height/5
+				? black : red;
+		}
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_FLOAT, &image[0]); //Texture->OpenGL
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	}
+};
+
+//---------------------------
+struct RenderState {
+//---------------------------
+	mat4	           MVP, M, Minv, V, P;
+	Material *         material;
+	std::vector<Light> lights;
+	Texture *          texture;
+	vec3	           wEye;
+};
+
+//---------------------------
+class Shader : public GPUProgram {
+//--------------------------
 public:
-	void setGold(bool _gold){gold = _gold;}
-	void build() {
-		vec3 eye = vec3(0, 0, 2);
-		vec3 vup = vec3(0, 1, 0);
-		vec3 lookat = vec3(0, 0, 0);
-		float fov = 45 * M_PI / 180;
-		camera.set(eye, lookat, vup, fov);
+	virtual void Bind(RenderState state) = 0;
+};
 
-		lights.push_back(new Light(vec3(1, 1, 1), vec3(1, 1, 1), vec3(1, 1, 1)));
+//---------------------------
+class GouraudShader : public Shader {
+//---------------------------
+	const char * vertexSource = R"(
+		#version 330
+		precision highp float;
 
-		ellipsoids.push_back(new Ellipsoid(vec3(-1+2*rnd(), -1+2*rnd(), -30), vec3((rnd() + 0.5) * 2, (rnd() + 0.5) * 2, (rnd() + 0.5) * 2)));
-		ellipsoids.push_back(new Ellipsoid(vec3(-1+2*rnd(), -1+2*rnd(), -30), vec3((rnd() + 0.5) * 2, (rnd() + 0.5) * 2, (rnd() + 0.5) * 2)));
-		ellipsoids.push_back(new Ellipsoid(vec3(-1+2*rnd(), -1+2*rnd(), -30), vec3((rnd() + 0.5) * 2, (rnd() + 0.5) * 2, (rnd() + 0.5) * 2)));
+		struct Light {
+			vec3 La, Le;
+			vec4 wLightPos;
+		};
+		
+		struct Material {
+			vec3 kd, ks, ka;
+			float shininess;
+		};
 
-		AddMirror();
-		AddMirror();
-		AddMirror();
+		uniform mat4  MVP, M, Minv;  // MVP, Model, Model-inverse
+		uniform Light[8] lights;     // light source direction 
+		uniform int   nLights;
+		uniform vec3  wEye;          // pos of eye
+		uniform Material  material;  // diffuse, specular, ambient ref
 
-		materials.push_back(new RoughMaterial(vec3(0.25, 0, 0), vec3(50, 50, 50), 50));
-		materials.push_back(new RoughMaterial(vec3(0, 0.5, 0), vec3(50, 50, 50), 50));
-		materials.push_back(new RoughMaterial(vec3(0, 0, 0.75), vec3(50, 50, 50), 50));
-		materials.push_back(new SmoothMaterial(vec3(0.17, 0.35, 1.5), vec3(3.1, 2.7, 1.9)));
-		materials.push_back(new SmoothMaterial(vec3(0.14, 0.16, 0.13), vec3(4.1, 2.3, 3.1)));
-	}
-	void SetUniform(unsigned int shaderProg) {
-		int location = glGetUniformLocation(shaderProg, "nEllipsoids");
-		if (location >= 0) glUniform1i(location, ellipsoids.size()); else printf("uniform nEllipsoids cannot be set\n");
-		for (int o = 0; o < ellipsoids.size(); o++) ellipsoids[o]->SetUniform(shaderProg, o);
-		location = glGetUniformLocation(shaderProg, "matType");
-		if (location >= 0) glUniform1i(location, gold ? 3 : 4); else printf("uniform matType cannot be set\n");
-		location = glGetUniformLocation(shaderProg, "nMirrors");
-		if (location >= 0) glUniform1i(location, mirrors.size()); else printf("uniform nMirrors cannot be set\n");
-		for (int r = 0; r < mirrors.size(); r++) mirrors[r]->SetUniform(shaderProg, r);
-		lights[0]->SetUniform(shaderProg);
-		camera.SetUniform(shaderProg);
-		for (int mat = 0; mat < materials.size(); mat++) materials[mat]->SetUniform(shaderProg, mat);
-	}
-	void AddMirror()
-	{
-		unsigned int size = mirrors.size();
-		if(size < 10)
-		{
-			mirrors.clear();
-			for(unsigned i = 0; i<=size; i++)
-			{
-				float alfa = (i * 1.0f/(size+1)) * 2 * M_PI;
-				mirrors.push_back(new Mirror(vec4(2*sinf(alfa), 2*cosf(alfa), 0, 4), vec2(-25, 0)));
+		layout(location = 0) in vec3  vtxPos;            // pos in modeling space
+		layout(location = 1) in vec3  vtxNorm;      	 // normal in modeling space
+
+		out vec3 radiance;		    // reflected radiance
+
+		void main() {
+			gl_Position = vec4(vtxPos, 1) * MVP; // to NDC
+			// radiance computation
+			vec4 wPos = vec4(vtxPos, 1) * M;	
+			vec3 V = normalize(wEye * wPos.w - wPos.xyz);
+			vec3 N = normalize((Minv * vec4(vtxNorm, 0)).xyz);
+			if (dot(N, V) < 0) N = -N;	// prepare for one-sided surfaces like Mobius or Klein
+
+			radiance = vec3(0, 0, 0);
+			for(int i = 0; i < nLights; i++) {
+				vec3 L = normalize(lights[i].wLightPos.xyz * wPos.w - wPos.xyz * lights[i].wLightPos.w);
+				vec3 H = normalize(L + V);
+				float cost = max(dot(N,L), 0), cosd = max(dot(N,H), 0);
+				radiance += material.ka * lights[i].La + (material.kd * cost + material.ks * pow(cosd, material.shininess)) * lights[i].Le;
 			}
 		}
-	}
-	void Animate()
-	{
-		for(auto i : ellipsoids)
-		{
-			i->Animate();
+	)";
+
+	// fragment shader in GLSL
+	const char * fragmentSource = R"(
+		#version 330
+		precision highp float;
+
+		in  vec3 radiance;      // interpolated radiance
+		out vec4 fragmentColor; // output goes to frame buffer
+
+		void main() {
+			fragmentColor = vec4(radiance, 1);
+		}
+	)";
+public:
+	GouraudShader() { Create(vertexSource, fragmentSource, "fragmentColor"); }
+
+	void Bind(RenderState state) {
+		glUseProgram(getId()); 		// make this program run
+		state.MVP.SetUniform(getId(), "MVP");
+		state.M.SetUniform(getId(), "M");
+		state.Minv.SetUniform(getId(), "Minv");
+		state.wEye.SetUniform(getId(), "wEye");
+		state.material->SetUniform(getId(), "material");
+
+		int location = glGetUniformLocation(getId(), "nLights");
+		if (location >= 0) glUniform1i(location, state.lights.size()); else printf("uniform nLight cannot be set\n");
+		for (int i = 0; i < state.lights.size(); i++) {
+			char buffer[256];
+			sprintf(buffer, "lights[%d]", i);
+			state.lights[i].SetUniform(getId(), buffer);
 		}
 	}
 };
 
-GPUProgram gpuProgram;
-Scene scene;
+//---------------------------
+class PhongShader : public Shader {
+//---------------------------
+	const char * vertexSource = R"(
+		#version 330
+		precision highp float;
 
-class FullScreenTexturedQuad {
-	unsigned int vao;
+		struct Light {
+			vec3 La, Le;
+			vec4 wLightPos;
+		};
+
+		uniform mat4  MVP, M, Minv; // MVP, Model, Model-inverse
+		uniform Light[8] lights;    // light sources 
+		uniform int   nLights;
+		uniform vec3  wEye;         // pos of eye
+
+		layout(location = 0) in vec3  vtxPos;            // pos in modeling space
+		layout(location = 1) in vec3  vtxNorm;      	 // normal in modeling space
+		layout(location = 2) in vec2  vtxUV;
+
+		out vec3 wNormal;		    // normal in world space
+		out vec3 wView;             // view in world space
+		out vec3 wLight[8];		    // light dir in world space
+		out vec2 texcoord;
+
+		void main() {
+			gl_Position = vec4(vtxPos, 1) * MVP; // to NDC
+			// vectors for radiance computation
+			vec4 wPos = vec4(vtxPos, 1) * M;
+			for(int i = 0; i < nLights; i++) {
+				wLight[i] = lights[i].wLightPos.xyz * wPos.w - wPos.xyz * lights[i].wLightPos.w;
+			}
+		    wView  = wEye * wPos.w - wPos.xyz;
+		    wNormal = (Minv * vec4(vtxNorm, 0)).xyz;
+		    texcoord = vtxUV;
+		}
+	)";
+
+	// fragment shader in GLSL
+	const char * fragmentSource = R"(
+		#version 330
+		precision highp float;
+
+		struct Light {
+			vec3 La, Le;
+			vec4 wLightPos;
+		};
+
+		struct Material {
+			vec3 kd, ks, ka;
+			float shininess;
+		};
+
+		uniform Material material;
+		uniform Light[8] lights;    // light sources 
+		uniform int   nLights;
+		uniform sampler2D diffuseTexture;
+
+		in  vec3 wNormal;       // interpolated world sp normal
+		in  vec3 wView;         // interpolated world sp view
+		in  vec3 wLight[8];     // interpolated world sp illum dir
+		in  vec2 texcoord;
+		
+        out vec4 fragmentColor; // output goes to frame buffer
+
+		void main() {
+			vec3 N = normalize(wNormal);
+			vec3 V = normalize(wView); 
+			if (dot(N, V) < 0) N = -N;	// prepare for one-sided surfaces like Mobius or Klein
+			vec3 texColor = texture(diffuseTexture, texcoord).rgb;
+			vec3 ka = material.ka * texColor;
+			vec3 kd = material.kd * texColor;
+
+			vec3 radiance = vec3(0, 0, 0);
+			for(int i = 0; i < nLights; i++) {
+				vec3 L = normalize(wLight[i]);
+				vec3 H = normalize(L + V);
+				float cost = max(dot(N,L), 0), cosd = max(dot(N,H), 0);
+				// kd and ka are modulated by the texture
+				radiance += ka * lights[i].La + (kd * cost + material.ks * pow(cosd, material.shininess)) * lights[i].Le;
+			}
+			fragmentColor = vec4(radiance, 1);
+		}
+	)";
 public:
-	void Create() {
+	PhongShader() { Create(vertexSource, fragmentSource, "fragmentColor"); }
+
+	void Bind(RenderState state) {
+		glUseProgram(getId()); 		// make this program run
+		state.MVP.SetUniform(getId(), "MVP");
+		state.M.SetUniform(getId(), "M");
+		state.Minv.SetUniform(getId(), "Minv");
+		state.wEye.SetUniform(getId(), "wEye");
+		state.material->SetUniform(getId(), "material");
+
+		int location = glGetUniformLocation(getId(), "nLights");
+		if (location >= 0) glUniform1i(location, state.lights.size()); else printf("uniform nLight cannot be set\n");
+		for (int i = 0; i < state.lights.size(); i++) {
+			char buffer[256];
+			sprintf(buffer, "lights[%d]", i);
+			state.lights[i].SetUniform(getId(), buffer);
+		}
+		state.texture->SetUniform(getId(), "diffuseTexture");
+	}
+};
+
+//---------------------------
+class NPRShader : public Shader {
+//---------------------------
+	const char * vertexSource = R"(
+		#version 330
+		precision highp float;
+
+		uniform mat4  MVP, M, Minv; // MVP, Model, Model-inverse
+		uniform	vec4  wLightPos;
+		uniform vec3  wEye;         // pos of eye
+
+		layout(location = 0) in vec3  vtxPos;            // pos in modeling space
+		layout(location = 1) in vec3  vtxNorm;      	 // normal in modeling space
+		layout(location = 2) in vec2  vtxUV;
+
+		out vec3 wNormal, wView, wLight;				// in world space
+		out vec2 texcoord;
+
+		void main() {
+		   gl_Position = vec4(vtxPos, 1) * MVP; // to NDC
+		   vec4 wPos = vec4(vtxPos, 1) * M;
+		   wLight = wLightPos.xyz * wPos.w - wPos.xyz * wLightPos.w;
+		   wView  = wEye * wPos.w - wPos.xyz;
+		   wNormal = (Minv * vec4(vtxNorm, 0)).xyz;
+		   texcoord = vtxUV;
+		}
+	)";
+
+	// fragment shader in GLSL
+	const char * fragmentSource = R"(
+		#version 330
+		precision highp float;
+
+		uniform sampler2D diffuseTexture;
+
+		in  vec3 wNormal, wView, wLight;	// interpolated
+		in  vec2 texcoord;
+		out vec4 fragmentColor;    			// output goes to frame buffer
+
+		void main() {
+		   vec3 N = normalize(wNormal), V = normalize(wView), L = normalize(wLight);
+		   float y = (dot(N, L) > 0.5) ? 1 : 0.5;
+		   if (abs(dot(N, V)) < 0.2) fragmentColor = vec4(0, 0, 0, 1);
+		   else						 fragmentColor = vec4(y * texture(diffuseTexture, texcoord).rgb, 1);
+		}
+	)";
+public:
+	NPRShader() { Create(vertexSource, fragmentSource, "fragmentColor"); }
+
+	void Bind(RenderState state) {
+		glUseProgram(getId()); 		// make this program run
+		state.MVP.SetUniform(getId(), "MVP");
+		state.M.SetUniform(getId(), "M");
+		state.Minv.SetUniform(getId(), "Minv");
+		state.wEye.SetUniform(getId(), "wEye");
+		state.lights[0].wLightPos.SetUniform(getId(), "wLightPos");
+
+		state.texture->SetUniform(getId(), "diffuseTexture");
+	}
+};
+
+//---------------------------
+struct VertexData {
+//---------------------------
+	vec3 position, normal;
+	vec2 texcoord;
+};
+
+//---------------------------
+class Geometry {
+//---------------------------
+protected:
+	unsigned int vao;        // vertex array object
+public:
+	Geometry( ) {
 		glGenVertexArrays(1, &vao);
 		glBindVertexArray(vao);
-
-		unsigned int vbo;
-		glGenBuffers(1, &vbo);
-
-		glBindBuffer(GL_ARRAY_BUFFER, vbo);
-		float vertexCoords[] = { -1, -1,  1, -1,  1, 1,  -1, 1 };
-		glBufferData(GL_ARRAY_BUFFER, sizeof(vertexCoords), vertexCoords, GL_STATIC_DRAW);
-		glEnableVertexAttribArray(0);
-		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, NULL);
 	}
+	virtual void Draw() = 0;
+};
 
-	void Draw() {
+//---------------------------
+class ParamSurface : public Geometry {
+//---------------------------
+	unsigned int nVtxPerStrip, nStrips;
+public:
+	ParamSurface() {
+		nVtxPerStrip = nStrips = 0;
+	}
+	virtual VertexData GenVertexData(float u, float v) = 0;
+
+	void Create(int N = tessellationLevel, int M = tessellationLevel) {
+		unsigned int vbo;
+		glGenBuffers(1, &vbo); // Generate 1 vertex buffer object
+		glBindBuffer(GL_ARRAY_BUFFER, vbo);
+		nVtxPerStrip = (M + 1) * 2;
+		nStrips = N;
+		std::vector<VertexData> vtxData;	// vertices on the CPU
+		for (int i = 0; i < N; i++) {
+			for (int j = 0; j <= M; j++) {
+				vtxData.push_back(GenVertexData((float)j / M, (float)i / N));
+				vtxData.push_back(GenVertexData((float)j / M, (float)(i + 1) / N));
+			}
+		}
+		glBufferData(GL_ARRAY_BUFFER, nVtxPerStrip * nStrips * sizeof(VertexData), &vtxData[0], GL_STATIC_DRAW);
+		// Enable the vertex attribute arrays
+		glEnableVertexAttribArray(0);  // attribute array 0 = POSITION
+		glEnableVertexAttribArray(1);  // attribute array 1 = NORMAL
+		glEnableVertexAttribArray(2);  // attribute array 2 = TEXCOORD0
+		// attribute array, components/attribute, component type, normalize?, stride, offset
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(VertexData), (void*)offsetof(VertexData, position)); 
+		glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(VertexData), (void*)offsetof(VertexData, normal));
+		glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(VertexData), (void*)offsetof(VertexData, texcoord));
+	}
+	void Draw()	{
 		glBindVertexArray(vao);
-		glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+		for (int i = 0; i < nStrips; i++) glDrawArrays(GL_TRIANGLE_STRIP, i *  nVtxPerStrip, nVtxPerStrip);
 	}
 };
 
-FullScreenTexturedQuad fullScreenTexturedQuad;
 
+//---------------------------
+class Sphere : public ParamSurface {
+//---------------------------
+public:
+	Sphere() { Create(); }
+
+	VertexData GenVertexData(float u, float v) {
+		VertexData vd;
+		vd.position = vd.normal = vec3(cosf(u * 2.0f * M_PI) * sinf(v*M_PI), sinf(u * 2.0f * M_PI) * sinf(v*M_PI), cosf(v*M_PI));
+		vd.texcoord = vec2(u, v);
+		return vd;
+	}
+};
+
+//---------------------------
+class Ellipsoid : public ParamSurface {
+//---------------------------
+private:
+	vec3 params{0.5,0.5,0.75};
+public:
+	Ellipsoid() { Create(); }
+
+	VertexData GenVertexData(float u, float v) {
+		VertexData vd;
+		vd.position = vec3(
+			params.x*cosf(v * M_PI - M_PI/2.0f) * cosf(u * 2.0f * M_PI - M_PI),
+			params.y*cosf(v * M_PI - M_PI/2.0f) * sinf(u * 2.0f * M_PI - M_PI),
+			params.z*sinf(v * M_PI - M_PI/2.0f));		
+		vd.normal = normalize(vec3(vd.position.x/params.x/params.x,vd.position.y/params.y/params.y,vd.position.z/params.z/params.z));//levezetes!
+		if(vd.position.x < 0)
+		{
+			vd.position.x = 0;
+			vd.normal = vec3(-1, 0, 0);
+		}
+		vd.texcoord = vec2(u, v);
+		return vd;
+	}
+};
+
+class KleinBottle : public ParamSurface {
+//---------------------------
+public:
+	KleinBottle() { Create(); }
+
+	VertexData GenVertexData(float u, float v) {
+		VertexData vd;
+		float U = 2 * M_PI * u;
+		float V = 2 * M_PI * v;
+		float a = 6 * cosf(U)*(1+sinf(U));
+		float b = 16* sinf(U);
+		float c = 4 * (1-cosf(U)/2);
+		vd.normal = vd.position = vec3(
+			M_PI < U <= 2*M_PI ? a + c*cosf(V+M_PI) : a + c*cosf(U)*cosf(V),
+			M_PI < U <= 2*M_PI ? b : b + c*sinf(U)*cosf(V),
+			c*sinf(V));
+		//vd.normal = normalize(vec3(vd.position.x/params.x/params.x,vd.position.y/params.y/params.y,vd.position.z/params.z/params.z));//levezetes!
+		vd.texcoord = vec2(u, v);
+		return vd;
+	}
+};
+
+class DiniSurface : public ParamSurface {
+//---------------------------
+private:
+	float a = 1;
+	float b = 0.15;
+public:
+	DiniSurface() { Create(); }
+
+	VertexData GenVertexData(float u, float v) {
+		VertexData vd;
+		float U = 4 * M_PI * u;
+		float V = v*0.99+0.01;
+		vd.normal = vd.position = vec3(
+			a*cosf(U)*sinf(V),
+			a*sinf(U)*sinf(V),
+			a*(cosf(V) + log(tanf(V/2))/log(M_E)) + b*U);
+		//vd.normal = normalize(vec3(vd.position.x/params.x/params.x,vd.position.y/params.y/params.y,vd.position.z/params.z/params.z));//levezetes!
+		vd.texcoord = vec2(u, v);
+		return vd;
+	}
+};
+
+//---------------------------
+class Torus : public ParamSurface {
+//---------------------------
+	const float R = 1, r = 0.5;
+
+	vec3 Point(float u, float v, float rr) {
+		float ur = u * 2.0f * M_PI, vr = v * 2.0f * M_PI;
+		float l = R + rr * cosf(ur);
+		return vec3(l * cosf(vr), l * sinf(vr), rr * sinf(ur));
+	}
+public:
+	Torus() { Create(); }
+
+	VertexData GenVertexData(float u, float v) {
+		VertexData vd;
+		vd.position = Point(u, v, r);
+		vd.normal = (vd.position - Point(u, v, 0)) * (1.0f / r);
+		vd.texcoord = vec2(u, v);
+		return vd;
+	}
+};
+
+//---------------------------
+struct Object {
+//---------------------------
+	Shader * shader;
+	Material * material;
+	Texture * texture;
+	Geometry * geometry;
+	vec3 scale, translation, rotationAxis;
+	float rotationAngle;
+public:
+	Object(Shader * _shader, Material * _material, Texture * _texture, Geometry * _geometry) :
+		scale(vec3(1, 1, 1)), translation(vec3(0, 0, 0)), rotationAxis(0, 0, 1), rotationAngle(0) {
+		shader = _shader;
+		texture = _texture;
+		material = _material;
+		geometry = _geometry;
+	}
+
+	void Draw(RenderState state) {
+		state.M = ScaleMatrix(scale) * RotationMatrix(rotationAngle, rotationAxis) * TranslateMatrix(translation);
+		state.Minv = TranslateMatrix(-translation) * RotationMatrix(-rotationAngle, rotationAxis) * ScaleMatrix(vec3(1 / scale.x, 1 / scale.y, 1 / scale.z));
+		state.MVP = state.M * state.V * state.P;
+		state.material = material;
+		state.texture = texture;
+		shader->Bind(state);
+		geometry->Draw();
+	}
+
+	void Animate(float tstart, float tend) { rotationAngle = tend; }
+};
+
+//---------------------------
+class Scene {
+//---------------------------
+	std::vector<Object *> objects;
+public:
+	Camera camera; // 3D camera
+	std::vector<Light> lights;
+
+	void Build() {
+		// Shaders
+		Shader * phongShader = new PhongShader();
+		Shader * gouraudShader = new GouraudShader();
+		Shader * nprShader = new NPRShader();
+
+		// Materials
+		Material * material0 = new Material;
+		material0->kd = vec3(0.6f, 0.4f, 0.2f);
+		material0->ks = vec3(4, 4, 4);
+		material0->ka = vec3(0.1f, 0.1f, 0.1f);
+		material0->shininess = 100;
+
+		Material * material1 = new Material;
+		material1->kd = vec3(0.8, 0.6, 0.4);
+		material1->ks = vec3(0.3, 0.3, 0.3);
+		material1->ka = vec3(0.2f, 0.2f, 0.2f);
+		material1->shininess = 30;
+
+		// Textures
+		Texture * texture4x8 = new CheckerBoardTexture(4, 8);
+		Texture * texture15x20 = new CheckerBoardTexture(15, 20);
+		Texture * ladyBugTexture = new LadyBugTexture(25, 25);
+
+		// Geometries
+		Geometry * sphere = new Sphere();
+		Geometry * torus = new Torus();
+		Geometry * ellipsoid = new Ellipsoid();
+		Geometry * kleinBottle = new KleinBottle();
+		Geometry * diniSurface = new DiniSurface();
+
+		// Create objects by setting up their vertex data on the GPU
+		Object * sphereObject1 = new Object(phongShader, material0, texture15x20, sphere);
+		sphereObject1->translation = vec3(-3, 3, 0);
+		sphereObject1->rotationAxis = vec3(0, 1, 1);
+		sphereObject1->scale = vec3(0.5f, 1.2f, 0.5f);
+		objects.push_back(sphereObject1);
+
+		Object * torusObject1 = new Object(phongShader, material0, texture4x8, torus);
+		torusObject1->translation = vec3(0, 3, 0);
+		torusObject1->rotationAxis = vec3(1, 1, -1);
+		torusObject1->scale = vec3(0.7f, 0.7f, 0.7f);
+		objects.push_back(torusObject1);
+
+		Object * sphereObject2 = new Object(*sphereObject1);
+		sphereObject2->translation = vec3(-3, -3, 0);
+		sphereObject2->shader = nprShader;
+		objects.push_back(sphereObject2);
+
+		Object * torusObject2 = new Object(*torusObject1);
+		torusObject2->translation = vec3(0, -3, 0);
+		torusObject2->shader = nprShader;
+		objects.push_back(torusObject2);
+
+		Object * sphereObject3 = new Object(*sphereObject1);
+		sphereObject3->translation = vec3(-3, 0, 0);
+		sphereObject3->shader = gouraudShader;
+		objects.push_back(sphereObject3);
+
+		Object * torusObject3 = new Object(*torusObject1);
+		torusObject3->translation = vec3(0, 0, 0);
+		torusObject3->shader = gouraudShader;
+		objects.push_back(torusObject3);
+
+		Object * ellipsoidObject1 = new Object(nprShader, material0, ladyBugTexture, ellipsoid);
+		ellipsoidObject1->translation = vec3(3, 0, 0);
+		ellipsoidObject1->rotationAxis = vec3(0, 3, 0);
+		objects.push_back(ellipsoidObject1);
+		Object * kleinBottle1 = new Object(nprShader, material0, texture15x20, kleinBottle);
+		kleinBottle1->translation = vec3(3, 3, 0);
+		kleinBottle1->rotationAxis = vec3(0, 3, 0);
+		kleinBottle1->scale = vec3(0.1, 0.1, 0.1);
+		objects.push_back(kleinBottle1);
+		Object * diniSurface1 = new Object(nprShader, material0, texture15x20, diniSurface);
+		diniSurface1->translation = vec3(3, -3, 0);
+		diniSurface1->rotationAxis = vec3(0, 3, 0);
+		diniSurface1->scale = vec3(1, 1, 1);
+		objects.push_back(diniSurface1);
+
+		// Camera
+		camera.wEye = vec3(0, 0, 6);
+		camera.wLookat = vec3(0, 0, 0);
+		camera.wVup = vec3(0, 1, 0);
+
+		// Lights
+		lights.resize(1);
+		lights[0].wLightPos = vec4(5, 5, 4, 0);	// ideal point -> directional light source
+		lights[0].La = vec3(1, 1, 1);
+		lights[0].Le = vec3(3, 3, 3);
+
+	}
+	void Render() {
+		RenderState state;
+		state.wEye = camera.wEye;
+		state.V = camera.V();
+		state.P = camera.P();
+		state.lights = lights;
+		for (Object * obj : objects) obj->Draw(state);
+	}
+
+	void Animate(float tstart, float tend) {
+		camera.Animate(tend);
+		for (int i = 0; i < lights.size(); i++) { lights[i].Animate(tend); }
+		for (Object * obj : objects) obj->Animate(tstart, tend);
+	}
+};
+
+Scene scene;
+ 
+// Initialization, create an OpenGL context
 void onInitialization() {
 	glViewport(0, 0, windowWidth, windowHeight);
-	scene.build();
-	fullScreenTexturedQuad.Create();
-
-	gpuProgram.Create(vertexSource, fragmentSource, "fragmentColor");
-	gpuProgram.Use();
+	glEnable(GL_DEPTH_TEST);
+	glDisable(GL_CULL_FACE);
+	scene.Build();
 }
 
+// Window has become invalid: Redraw
 void onDisplay() {
-	glClearColor(0, 0, 0, 1.0f);
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	scene.SetUniform(gpuProgram.getId());
-	fullScreenTexturedQuad.Draw();
-	glutSwapBuffers();
+	glClearColor(0.5f, 0.5f, 0.8f, 1.0f);							// background color 
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear the screen
+	scene.Render();
+	glutSwapBuffers();									// exchange the two buffers
 }
 
-void onKeyboard(unsigned char key, int pX, int pY) {
-	if(key == 'a')
-	{
-		scene.AddMirror();
-		glutPostRedisplay();
-	}
-	else if (key == 'g')
-	{
-		scene.setGold(true);
-        glutPostRedisplay();
-	}
-	else if (key == 's')
-	{
-		scene.setGold(false);
-        glutPostRedisplay();
-	}
+// Key of ASCII code pressed
+void onKeyboard(unsigned char key, int pX, int pY) { }
+
+// Key of ASCII code released
+void onKeyboardUp(unsigned char key, int pX, int pY) { }
+
+// Mouse click event
+void onMouse(int button, int state, int pX, int pY) { }
+
+// Move mouse with key pressed
+void onMouseMotion(int pX, int pY) {
 }
 
-void onKeyboardUp(unsigned char key, int pX, int pY) {}
-
-void onMouseMotion(int pX, int pY) {}
-
-void onMouse(int button, int state, int pX, int pY) {}
-
-long lastTime = 0;
-
+// Idle event indicating that some time elapsed: do animation here
 void onIdle() {
-    long time = glutGet(GLUT_ELAPSED_TIME);
-    long elapsedTime = time - lastTime;
-    for(long l = 0; l<elapsedTime; l+=100) scene.Animate();
+	static float tend = 0;
+	const float dt = 0.1; // dt is ”infinitesimal”
+	float tstart = tend;
+	tend = glutGet(GLUT_ELAPSED_TIME) / 1000.0f;
+
+	for (float t = tstart; t < tend; t += dt) {
+		float Dt = fmin(dt, tend - t);
+		scene.Animate(t, t + Dt); 
+	}
 	glutPostRedisplay();
-    lastTime = time;
 }
