@@ -9,7 +9,7 @@
 //=============================================================================================
 #include "framework.h"
 
-const int tessellationLevel = 20;
+const int tessellationLevel = 50;
 
 //---------------------------
 struct Camera { // 3D camera
@@ -137,84 +137,6 @@ public:
 	virtual void Bind(RenderState state) = 0;
 };
 
-//---------------------------
-class GouraudShader : public Shader {
-//---------------------------
-	const char * vertexSource = R"(
-		#version 330
-		precision highp float;
-
-		struct Light {
-			vec3 La, Le;
-			vec4 wLightPos;
-		};
-		
-		struct Material {
-			vec3 kd, ks, ka;
-			float shininess;
-		};
-
-		uniform mat4  MVP, M, Minv;  // MVP, Model, Model-inverse
-		uniform Light[8] lights;     // light source direction 
-		uniform int   nLights;
-		uniform vec3  wEye;          // pos of eye
-		uniform Material  material;  // diffuse, specular, ambient ref
-
-		layout(location = 0) in vec3  vtxPos;            // pos in modeling space
-		layout(location = 1) in vec3  vtxNorm;      	 // normal in modeling space
-
-		out vec3 radiance;		    // reflected radiance
-
-		void main() {
-			gl_Position = vec4(vtxPos, 1) * MVP; // to NDC
-			// radiance computation
-			vec4 wPos = vec4(vtxPos, 1) * M;	
-			vec3 V = normalize(wEye * wPos.w - wPos.xyz);
-			vec3 N = normalize((Minv * vec4(vtxNorm, 0)).xyz);
-			if (dot(N, V) < 0) N = -N;	// prepare for one-sided surfaces like Mobius or Klein
-
-			radiance = vec3(0, 0, 0);
-			for(int i = 0; i < nLights; i++) {
-				vec3 L = normalize(lights[i].wLightPos.xyz * wPos.w - wPos.xyz * lights[i].wLightPos.w);
-				vec3 H = normalize(L + V);
-				float cost = max(dot(N,L), 0), cosd = max(dot(N,H), 0);
-				radiance += material.ka * lights[i].La + (material.kd * cost + material.ks * pow(cosd, material.shininess)) * lights[i].Le;
-			}
-		}
-	)";
-
-	// fragment shader in GLSL
-	const char * fragmentSource = R"(
-		#version 330
-		precision highp float;
-
-		in  vec3 radiance;      // interpolated radiance
-		out vec4 fragmentColor; // output goes to frame buffer
-
-		void main() {
-			fragmentColor = vec4(radiance, 1);
-		}
-	)";
-public:
-	GouraudShader() { Create(vertexSource, fragmentSource, "fragmentColor"); }
-
-	void Bind(RenderState state) {
-		glUseProgram(getId()); 		// make this program run
-		state.MVP.SetUniform(getId(), "MVP");
-		state.M.SetUniform(getId(), "M");
-		state.Minv.SetUniform(getId(), "Minv");
-		state.wEye.SetUniform(getId(), "wEye");
-		state.material->SetUniform(getId(), "material");
-
-		int location = glGetUniformLocation(getId(), "nLights");
-		if (location >= 0) glUniform1i(location, state.lights.size()); else printf("uniform nLight cannot be set\n");
-		for (int i = 0; i < state.lights.size(); i++) {
-			char buffer[256];
-			sprintf(buffer, "lights[%d]", i);
-			state.lights[i].SetUniform(getId(), buffer);
-		}
-	}
-};
 
 //---------------------------
 class PhongShader : public Shader {
@@ -443,20 +365,28 @@ public:
 	}
 };
 
-
 //---------------------------
-class Sphere : public ParamSurface {
+struct Clifford {
 //---------------------------
-public:
-	Sphere() { Create(); }
-
-	VertexData GenVertexData(float u, float v) {
-		VertexData vd;
-		vd.position = vd.normal = vec3(cosf(u * 2.0f * M_PI) * sinf(v*M_PI), sinf(u * 2.0f * M_PI) * sinf(v*M_PI), cosf(v*M_PI));
-		vd.texcoord = vec2(u, v);
-		return vd;
+	float f, d;
+	Clifford(float f0 = 0, float d0 = 0) { f = f0, d = d0; }
+	Clifford operator+(Clifford r) { return Clifford(f + r.f, d + r.d); }
+	Clifford operator-(Clifford r) { return Clifford(f - r.f, d - r.d); }
+	Clifford operator*(Clifford r) { return Clifford(f * r.f, f * r.d + d * r.f); }
+	Clifford operator/(Clifford r) {
+		float l = r.f * r.f;
+		return (*this) * Clifford(r.f / l, -r.d / l);
 	}
 };
+
+Clifford T(float t) { return Clifford(t, 1); }
+Clifford Sin(Clifford g) { return Clifford(sin(g.f), cos(g.f) * g.d); }
+Clifford Cos(Clifford g) { return Clifford(cos(g.f), -sin(g.f) * g.d); }
+Clifford Tan(Clifford g) { return Sin(g) / Cos(g); }
+Clifford Log(Clifford g) { return Clifford(logf(g.f), 1 / g.f * g.d); }
+Clifford Exp(Clifford g) { return Clifford(expf(g.f), expf(g.f) * g.d); }
+Clifford Pow(Clifford g, float n) { return Clifford(powf(g.f, n), n * powf(g.f, n - 1) * g.d); }
+
 
 //---------------------------
 class Ellipsoid : public ParamSurface {
@@ -468,11 +398,18 @@ public:
 
 	VertexData GenVertexData(float u, float v) {
 		VertexData vd;
-		vd.position = vec3(
-			params.x*cosf(v * M_PI - M_PI/2.0f) * cosf(u * 2.0f * M_PI - M_PI),
-			params.y*cosf(v * M_PI - M_PI/2.0f) * sinf(u * 2.0f * M_PI - M_PI),
-			params.z*sinf(v * M_PI - M_PI/2.0f));		
-		vd.normal = normalize(vec3(vd.position.x/params.x/params.x,vd.position.y/params.y/params.y,vd.position.z/params.z/params.z));//levezetes!
+		float U = u * 2.0f * M_PI - M_PI;
+		float V = v * M_PI - M_PI/2.0f;
+		Clifford x = Cos(T(U)) * params.x*cosf(V);
+		Clifford y = Sin(T(U)) * params.y*cosf(V);
+		Clifford z = params.z * sinf(V);		
+		Clifford Vx = Cos(T(V)) * cosf(U) * params.x;
+		Clifford Vy = Cos(T(V)) * params.y*sinf(U);
+		Clifford Vz = Sin(T(V)) * params.z;		
+		vd.position = vec3(x.f, y.f, z.f);
+		vec3 drdU(x.d, y.d, z.d);
+		vec3 drdV(Vx.d, Vy.d, Vz.d);
+		vd.normal = cross(drdU, drdV);
 		if(vd.position.x < 0)
 		{
 			vd.position.x = 0;
@@ -495,11 +432,21 @@ public:
 		float a = 6 * cosf(U)*(1+sinf(U));
 		float b = 16* sinf(U);
 		float c = 4 * (1-cosf(U)/2);
-		vd.normal = vd.position = vec3(
-			M_PI < U <= 2*M_PI ? a + c*cosf(V+M_PI) : a + c*cosf(U)*cosf(V),
-			M_PI < U <= 2*M_PI ? b : b + c*sinf(U)*cosf(V),
-			c*sinf(V));
-		//vd.normal = normalize(vec3(vd.position.x/params.x/params.x,vd.position.y/params.y/params.y,vd.position.z/params.z/params.z));//levezetes!
+
+		Clifford x = M_PI < U <= 2*M_PI ?
+			Cos(T(U))*(Sin(T(U))+1)*6 + (Cos(T(U))*-0.5f+1)*4*cosf(V+M_PI) :
+			Cos(T(U))*(Cos(T(U))*-0.5f+1)*4*cosf(V) + Cos(T(U))*(Sin(T(U))+1)*6;
+		Clifford y = M_PI < U <= 2*M_PI ?
+			Sin(T(U)) * 16 :
+			Sin(T(U))*(Cos(T(U))*-0.5f+1)*4*cosf(V) + Sin(T(U)) * 16;
+		Clifford z = (Cos(T(U))*-0.5f+1)*4*sinf(V);
+		Clifford Vx = M_PI < U <= 2*M_PI ? Cos(T(V)+M_PI)*c + a : Cos(T(V))*c*cosf(U) + a;
+		Clifford Vy = M_PI < U <= 2*M_PI ? b : Cos(T(V))*c*sinf(U) + b;
+		Clifford Vz = Sin(T(V))*c;	
+		vd.position = vec3(x.f, y.f, z.f);
+		vec3 drdU(x.d, y.d, z.d);
+		vec3 drdV(Vx.d, Vy.d, Vz.d);
+		vd.normal = cross(drdU, drdV);
 		vd.texcoord = vec2(u, v);
 		return vd;
 	}
@@ -517,33 +464,16 @@ public:
 		VertexData vd;
 		float U = 4 * M_PI * u;
 		float V = v*0.99+0.01;
-		vd.normal = vd.position = vec3(
-			a*cosf(U)*sinf(V),
-			a*sinf(U)*sinf(V),
-			a*(cosf(V) + log(tanf(V/2))/log(M_E)) + b*U);
-		//vd.normal = normalize(vec3(vd.position.x/params.x/params.x,vd.position.y/params.y/params.y,vd.position.z/params.z/params.z));//levezetes!
-		vd.texcoord = vec2(u, v);
-		return vd;
-	}
-};
-
-//---------------------------
-class Torus : public ParamSurface {
-//---------------------------
-	const float R = 1, r = 0.5;
-
-	vec3 Point(float u, float v, float rr) {
-		float ur = u * 2.0f * M_PI, vr = v * 2.0f * M_PI;
-		float l = R + rr * cosf(ur);
-		return vec3(l * cosf(vr), l * sinf(vr), rr * sinf(ur));
-	}
-public:
-	Torus() { Create(); }
-
-	VertexData GenVertexData(float u, float v) {
-		VertexData vd;
-		vd.position = Point(u, v, r);
-		vd.normal = (vd.position - Point(u, v, 0)) * (1.0f / r);
+		Clifford x = Cos(T(U))*a*sinf(V);
+		Clifford y = Sin(T(U))*a*sinf(V);
+		Clifford z = T(U) * b + a*(cosf(V) + log(tanf(V/2))/log(M_E));
+		Clifford Vx = Sin(T(V))*a*cosf(U);
+		Clifford Vy = Sin(T(V))*a*sinf(U);
+		Clifford Vz = (Cos(T(V)) + Log(Tan(T(V)/2))/log(M_E))*a + b*U;	
+		vd.position = vec3(x.f, y.f, z.f);
+		vec3 drdU(x.d, y.d, z.d);
+		vec3 drdV(Vx.d, Vy.d, Vz.d);
+		vd.normal = cross(drdU, drdV);
 		vd.texcoord = vec2(u, v);
 		return vd;
 	}
@@ -591,7 +521,6 @@ public:
 	void Build() {
 		// Shaders
 		Shader * phongShader = new PhongShader();
-		Shader * gouraudShader = new GouraudShader();
 		Shader * nprShader = new NPRShader();
 
 		// Materials
@@ -601,70 +530,28 @@ public:
 		material0->ka = vec3(0.1f, 0.1f, 0.1f);
 		material0->shininess = 100;
 
-		Material * material1 = new Material;
-		material1->kd = vec3(0.8, 0.6, 0.4);
-		material1->ks = vec3(0.3, 0.3, 0.3);
-		material1->ka = vec3(0.2f, 0.2f, 0.2f);
-		material1->shininess = 30;
-
 		// Textures
 		Texture * texture4x8 = new CheckerBoardTexture(4, 8);
 		Texture * texture15x20 = new CheckerBoardTexture(15, 20);
 		Texture * ladyBugTexture = new LadyBugTexture(25, 25);
 
-		// Geometries
-		Geometry * sphere = new Sphere();
-		Geometry * torus = new Torus();
 		Geometry * ellipsoid = new Ellipsoid();
 		Geometry * kleinBottle = new KleinBottle();
 		Geometry * diniSurface = new DiniSurface();
 
-		// Create objects by setting up their vertex data on the GPU
-		Object * sphereObject1 = new Object(phongShader, material0, texture15x20, sphere);
-		sphereObject1->translation = vec3(-3, 3, 0);
-		sphereObject1->rotationAxis = vec3(0, 1, 1);
-		sphereObject1->scale = vec3(0.5f, 1.2f, 0.5f);
-		objects.push_back(sphereObject1);
-
-		Object * torusObject1 = new Object(phongShader, material0, texture4x8, torus);
-		torusObject1->translation = vec3(0, 3, 0);
-		torusObject1->rotationAxis = vec3(1, 1, -1);
-		torusObject1->scale = vec3(0.7f, 0.7f, 0.7f);
-		objects.push_back(torusObject1);
-
-		Object * sphereObject2 = new Object(*sphereObject1);
-		sphereObject2->translation = vec3(-3, -3, 0);
-		sphereObject2->shader = nprShader;
-		objects.push_back(sphereObject2);
-
-		Object * torusObject2 = new Object(*torusObject1);
-		torusObject2->translation = vec3(0, -3, 0);
-		torusObject2->shader = nprShader;
-		objects.push_back(torusObject2);
-
-		Object * sphereObject3 = new Object(*sphereObject1);
-		sphereObject3->translation = vec3(-3, 0, 0);
-		sphereObject3->shader = gouraudShader;
-		objects.push_back(sphereObject3);
-
-		Object * torusObject3 = new Object(*torusObject1);
-		torusObject3->translation = vec3(0, 0, 0);
-		torusObject3->shader = gouraudShader;
-		objects.push_back(torusObject3);
-
 		Object * ellipsoidObject1 = new Object(nprShader, material0, ladyBugTexture, ellipsoid);
-		ellipsoidObject1->translation = vec3(3, 0, 0);
+		ellipsoidObject1->translation = vec3(-3, 3, 0);
 		ellipsoidObject1->rotationAxis = vec3(0, 3, 0);
 		objects.push_back(ellipsoidObject1);
-		Object * kleinBottle1 = new Object(nprShader, material0, texture15x20, kleinBottle);
-		kleinBottle1->translation = vec3(3, 3, 0);
+		Object * kleinBottle1 = new Object(phongShader, material0, texture15x20, kleinBottle);
+		kleinBottle1->translation = vec3(0, 0, 0);
 		kleinBottle1->rotationAxis = vec3(0, 3, 0);
 		kleinBottle1->scale = vec3(0.1, 0.1, 0.1);
 		objects.push_back(kleinBottle1);
-		Object * diniSurface1 = new Object(nprShader, material0, texture15x20, diniSurface);
+		Object * diniSurface1 = new Object(phongShader, material0, texture15x20, diniSurface);
 		diniSurface1->translation = vec3(3, -3, 0);
 		diniSurface1->rotationAxis = vec3(0, 3, 0);
-		diniSurface1->scale = vec3(1, 1, 1);
+		diniSurface1->scale = vec3(0.5, 0.5, 0.5);
 		objects.push_back(diniSurface1);
 
 		// Camera
