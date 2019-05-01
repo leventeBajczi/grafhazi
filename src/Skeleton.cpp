@@ -37,7 +37,10 @@ public:
 					0, 0, -(fp + bp) / (bp - fp), -1,
 					0, 0, -2 * fp*bp / (bp - fp), 0);
 	}
-	void Animate(float t) { }
+	void Animate(float t) {
+		wEye = vec3(cosf(t)*6, sinf(t)*6, cosf(t)*6);
+		wVup = vec3(0, cosf(t), 0);
+	}
 };
 
 //---------------------------
@@ -409,7 +412,7 @@ public:
 		vd.position = vec3(x.f, y.f, z.f);
 		vec3 drdU(x.d, y.d, z.d);
 		vec3 drdV(Vx.d, Vy.d, Vz.d);
-		vd.normal = cross(drdU, drdV);
+		vd.normal = normalize(cross(drdU, drdV));
 		if(vd.position.x < 0)
 		{
 			vd.position.x = 0;
@@ -446,7 +449,7 @@ public:
 		vd.position = vec3(x.f, y.f, z.f);
 		vec3 drdU(x.d, y.d, z.d);
 		vec3 drdV(Vx.d, Vy.d, Vz.d);
-		vd.normal = cross(drdU, drdV);
+		vd.normal = normalize(cross(drdU, drdV));
 		vd.texcoord = vec2(u, v);
 		return vd;
 	}
@@ -473,7 +476,7 @@ public:
 		vd.position = vec3(x.f, y.f, z.f);
 		vec3 drdU(x.d, y.d, z.d);
 		vec3 drdV(Vx.d, Vy.d, Vz.d);
-		vd.normal = cross(drdU, drdV);
+		vd.normal = normalize(cross(drdU, drdV));
 		vd.texcoord = vec2(u, v);
 		return vd;
 	}
@@ -536,23 +539,38 @@ public:
 		Texture * ladyBugTexture = new LadyBugTexture(25, 25);
 
 		Geometry * ellipsoid = new Ellipsoid();
-		Geometry * kleinBottle = new KleinBottle();
+		KleinBottle * kleinBottle = new KleinBottle();
 		Geometry * diniSurface = new DiniSurface();
 
-		Object * ellipsoidObject1 = new Object(nprShader, material0, ladyBugTexture, ellipsoid);
-		ellipsoidObject1->translation = vec3(-3, 3, 0);
-		ellipsoidObject1->rotationAxis = vec3(0, 3, 0);
-		objects.push_back(ellipsoidObject1);
+
 		Object * kleinBottle1 = new Object(phongShader, material0, texture15x20, kleinBottle);
 		kleinBottle1->translation = vec3(0, 0, 0);
 		kleinBottle1->rotationAxis = vec3(0, 3, 0);
 		kleinBottle1->scale = vec3(0.1, 0.1, 0.1);
 		objects.push_back(kleinBottle1);
 		Object * diniSurface1 = new Object(phongShader, material0, texture15x20, diniSurface);
-		diniSurface1->translation = vec3(3, -3, 0);
-		diniSurface1->rotationAxis = vec3(0, 3, 0);
-		diniSurface1->scale = vec3(0.5, 0.5, 0.5);
+		diniSurface1->scale = vec3(0.15, 0.15, 0.15);
+		VertexData vd = kleinBottle->GenVertexData(0.25, 0.75);
+		diniSurface1->translation = vd.position * kleinBottle1->scale + vd.normal*0.5;
+		diniSurface1->rotationAxis = cross(vec3(0,0,1),vd.normal);
+		diniSurface1->rotationAngle = acosf(dot(vd.normal, vec3(0, 0, 1)));
 		objects.push_back(diniSurface1);
+		
+		Object * diniSurface2 = new Object(phongShader, material0, texture15x20, diniSurface);
+		diniSurface2->scale = vec3(0.15, 0.15, 0.15);
+		vd = kleinBottle->GenVertexData(0.75, 0.25);
+		diniSurface2->translation = vd.position * kleinBottle1->scale + vd.normal*0.5;
+		diniSurface2->rotationAxis = cross(vec3(0,0,1),vd.normal);
+		diniSurface2->rotationAngle = acosf(dot(vd.normal, vec3(0, 0, 1)));
+		objects.push_back(diniSurface2);
+
+		Object * ellipsoidObject1 = new Object(nprShader, material0, ladyBugTexture, ellipsoid);
+		vd = kleinBottle->GenVertexData(0.5, 0);
+		ellipsoidObject1->translation = vd.position * kleinBottle1->scale;
+		ellipsoidObject1->rotationAxis = cross(vd.normal, vec3(-1,0,0));
+		ellipsoidObject1->rotationAngle = acosf(dot(vd.normal, vec3(1, 0, 0)));
+		ellipsoidObject1->scale = vec3(0.25, 0.25, 0.25);
+		objects.push_back(ellipsoidObject1);
 
 		// Camera
 		camera.wEye = vec3(0, 0, 6);
@@ -578,7 +596,6 @@ public:
 	void Animate(float tstart, float tend) {
 		camera.Animate(tend);
 		for (int i = 0; i < lights.size(); i++) { lights[i].Animate(tend); }
-		for (Object * obj : objects) obj->Animate(tstart, tend);
 	}
 };
 
