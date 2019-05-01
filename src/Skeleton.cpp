@@ -563,7 +563,8 @@ public:
 
 struct Ladybug : public Object
 {
-	using Object::Object;
+	Ladybug(Shader * _shader, Material * _material, Texture * _texture, Geometry * _geometry) :
+	Object(_shader, _material, _texture, _geometry) {}
 	float distance = 4;
 	KleinBottle* kleinBottle;
 	Object* kleinBottle1;
