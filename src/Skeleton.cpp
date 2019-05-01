@@ -10,12 +10,14 @@
 #include "framework.h"
 
 const int tessellationLevel = 50;
+struct Object;
 
 //---------------------------
 struct Camera { // 3D camera
 //---------------------------
 	vec3 wEye, wLookat, wVup;   // extinsic
 	float fov, asp, fp, bp;		// intrinsic
+	Object *follow;
 public:
 	Camera() {
 		asp = (float)windowWidth/windowHeight;
@@ -37,10 +39,7 @@ public:
 					0, 0, -(fp + bp) / (bp - fp), -1,
 					0, 0, -2 * fp*bp / (bp - fp), 0);
 	}
-	void Animate(float t) {
-		wEye = vec3(cosf(t)*6, sinf(t)*6, cosf(t)*6);
-		wVup = vec3(0, cosf(t), 0);
-	}
+	void Animate(float t);
 };
 
 //---------------------------
@@ -66,13 +65,34 @@ struct Material {
 	}
 };
 
+float lengthsq(const vec4& obj)
+{
+	return obj.x*obj.x+obj.y*obj.y+obj.z*obj.z+obj.w*obj.w;
+}
+
+vec4 invert(const vec4& obj)
+{
+	return vec4{obj.x, -obj.y, -obj.z, -obj.w}/lengthsq(obj);
+}
+
 //---------------------------
 struct Light {
 //---------------------------
 	vec3 La, Le;
 	vec4 wLightPos;
+	vec4 wLightPos_original;
+	vec4 center;
 
-	void Animate(float t) {	}
+	void Animate(float t) {
+		vec4 quaternion{
+			cosf(t/4),
+			sinf(t/4)*cosf(t)/2,
+			sinf(t/4)*sinf(t)/2,
+			sinf(t/4)*sqrtf(3.0f/4)};
+		vec4 light{0, wLightPos_original.x, wLightPos_original.y, wLightPos_original.z};
+		light = quaternion * light * invert(quaternion);
+		wLightPos = vec4{light.y, light.z, light.w, 0} + center;
+	}
 
 	void SetUniform(unsigned shaderProg, char * name) {
 		char buffer[256];
@@ -96,6 +116,22 @@ struct CheckerBoardTexture : public Texture {
 		const vec3 yellow(1, 1, 0), blue(0, 0, 1);
 		for (int x = 0; x < width; x++) for (int y = 0; y < height; y++) {
 			image[y * width + x] = (x & 1) ^ (y & 1) ? yellow : blue;
+		}
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_FLOAT, &image[0]); //Texture->OpenGL
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	}
+};
+
+//---------------------------
+struct DiniTexture : public Texture {
+//---------------------------
+	DiniTexture(const int width = 0, const int height = 0) : Texture() {
+		glBindTexture(GL_TEXTURE_2D, textureId);    // binding
+		std::vector<vec3> image(width * height);
+		const vec3 red(1, 0, 0), black(0, 0, 0);
+		for (int x = 0; x < width; x++) for (int y = 0; y < height; y++) {
+			image[y * width + x] = (x & 1) ^ (y & 1) ? red : black;
 		}
 		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_FLOAT, &image[0]); //Texture->OpenGL
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -425,7 +461,17 @@ public:
 
 class KleinBottle : public ParamSurface {
 //---------------------------
+	float minX = 0, minY = 0, minZ = 0,
+		  maxX = 0, maxY = 0, maxZ = 0;
 public:
+	vec4 getAABBCenter()
+	{
+		return vec4(
+			(maxX + minX)/2,
+			(maxY + minY)/2,
+			(maxZ + minZ)/2,
+			0);
+	}
 	KleinBottle() { Create(); }
 
 	VertexData GenVertexData(float u, float v) {
@@ -447,6 +493,12 @@ public:
 		Clifford Vy = M_PI < U <= 2*M_PI ? b : Cos(T(V))*c*sinf(U) + b;
 		Clifford Vz = Sin(T(V))*c;	
 		vd.position = vec3(x.f, y.f, z.f);
+		if(x.f < minX) minX = x.f;
+		if(y.f < minY) minY = y.f;
+		if(z.f < minZ) minZ = z.f;
+		if(x.f > maxX) maxX = x.f;
+		if(y.f > maxY) maxY = y.f;
+		if(z.f > maxZ) maxZ = z.f;
 		vec3 drdU(x.d, y.d, z.d);
 		vec3 drdV(Vx.d, Vy.d, Vz.d);
 		vd.normal = normalize(cross(drdU, drdV));
@@ -489,7 +541,7 @@ struct Object {
 	Material * material;
 	Texture * texture;
 	Geometry * geometry;
-	vec3 scale, translation, rotationAxis;
+	vec3 scale, translation, rotationAxis, normal;
 	float rotationAngle;
 public:
 	Object(Shader * _shader, Material * _material, Texture * _texture, Geometry * _geometry) :
@@ -510,7 +562,23 @@ public:
 		geometry->Draw();
 	}
 
-	void Animate(float tstart, float tend) { rotationAngle = tend; }
+	virtual void Animate(float tstart, float tend) {  }
+};
+
+struct Ladybug : public Object
+{
+	using Object::Object;
+	KleinBottle* kleinBottle;
+	Object* kleinBottle1;
+	virtual void Animate(float tstart, float tend) {
+		VertexData vd = kleinBottle->GenVertexData(tend*0.1*cosf(M_PI/4), tend*0.1*sinf(M_PI/4));
+		translation = vd.position * kleinBottle1->scale;
+		rotationAxis = cross(vd.normal, vec3(-1,0,0));
+		rotationAngle = acosf(dot(vd.normal, vec3(1, 0, 0)));
+		scale = vec3(0.25, 0.25, 0.25);
+		normal = vd.normal;
+	}
+
 };
 
 //---------------------------
@@ -534,8 +602,8 @@ public:
 		material0->shininess = 100;
 
 		// Textures
-		Texture * texture4x8 = new CheckerBoardTexture(4, 8);
 		Texture * texture15x20 = new CheckerBoardTexture(15, 20);
+		Texture * diniTexture = new DiniTexture(25, 25);
 		Texture * ladyBugTexture = new LadyBugTexture(25, 25);
 
 		Geometry * ellipsoid = new Ellipsoid();
@@ -548,7 +616,8 @@ public:
 		kleinBottle1->rotationAxis = vec3(0, 3, 0);
 		kleinBottle1->scale = vec3(0.1, 0.1, 0.1);
 		objects.push_back(kleinBottle1);
-		Object * diniSurface1 = new Object(phongShader, material0, texture15x20, diniSurface);
+
+		Object * diniSurface1 = new Object(phongShader, material0, diniTexture, diniSurface);
 		diniSurface1->scale = vec3(0.15, 0.15, 0.15);
 		VertexData vd = kleinBottle->GenVertexData(0.25, 0.75);
 		diniSurface1->translation = vd.position * kleinBottle1->scale + vd.normal*0.5;
@@ -556,7 +625,7 @@ public:
 		diniSurface1->rotationAngle = acosf(dot(vd.normal, vec3(0, 0, 1)));
 		objects.push_back(diniSurface1);
 		
-		Object * diniSurface2 = new Object(phongShader, material0, texture15x20, diniSurface);
+		Object * diniSurface2 = new Object(phongShader, material0, diniTexture, diniSurface);
 		diniSurface2->scale = vec3(0.15, 0.15, 0.15);
 		vd = kleinBottle->GenVertexData(0.75, 0.25);
 		diniSurface2->translation = vd.position * kleinBottle1->scale + vd.normal*0.5;
@@ -564,24 +633,23 @@ public:
 		diniSurface2->rotationAngle = acosf(dot(vd.normal, vec3(0, 0, 1)));
 		objects.push_back(diniSurface2);
 
-		Object * ellipsoidObject1 = new Object(nprShader, material0, ladyBugTexture, ellipsoid);
-		vd = kleinBottle->GenVertexData(0.5, 0);
-		ellipsoidObject1->translation = vd.position * kleinBottle1->scale;
-		ellipsoidObject1->rotationAxis = cross(vd.normal, vec3(-1,0,0));
-		ellipsoidObject1->rotationAngle = acosf(dot(vd.normal, vec3(1, 0, 0)));
-		ellipsoidObject1->scale = vec3(0.25, 0.25, 0.25);
+		Ladybug * ellipsoidObject1 = new Ladybug(nprShader, material0, ladyBugTexture, ellipsoid);
+		ellipsoidObject1->kleinBottle1 = kleinBottle1;
+		ellipsoidObject1->kleinBottle = kleinBottle;
 		objects.push_back(ellipsoidObject1);
 
 		// Camera
+		camera.follow = ellipsoidObject1;
 		camera.wEye = vec3(0, 0, 6);
 		camera.wLookat = vec3(0, 0, 0);
 		camera.wVup = vec3(0, 1, 0);
 
 		// Lights
 		lights.resize(1);
-		lights[0].wLightPos = vec4(5, 5, 4, 0);	// ideal point -> directional light source
+		lights[0].wLightPos_original = vec4(10, 10, 10, 0);	// ideal point -> directional light source
 		lights[0].La = vec3(1, 1, 1);
 		lights[0].Le = vec3(3, 3, 3);
+		lights[0].center = kleinBottle->getAABBCenter();
 
 	}
 	void Render() {
@@ -596,10 +664,18 @@ public:
 	void Animate(float tstart, float tend) {
 		camera.Animate(tend);
 		for (int i = 0; i < lights.size(); i++) { lights[i].Animate(tend); }
+		for (int i = 0; i < objects.size(); i++) { objects[i]->Animate(0, tend); }
 	}
 };
 
 Scene scene;
+
+void Camera::Animate(float t) {
+	vec4 front = vec4(0, 1, 0, 1) * RotationMatrix(follow->rotationAngle, follow->rotationAxis);
+	wEye = follow->translation + follow->normal*4;
+	wLookat = follow->translation;
+	wVup = follow->translation + vec3(front.x, front.y, front.z);
+}
  
 // Initialization, create an OpenGL context
 void onInitialization() {
