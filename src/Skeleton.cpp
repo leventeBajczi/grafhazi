@@ -10,14 +10,14 @@
 #include "framework.h"
 
 const int tessellationLevel = 50;
-struct Object;
+class Ladybug;
 
 //---------------------------
 struct Camera { // 3D camera
 //---------------------------
 	vec3 wEye, wLookat, wVup;   // extinsic
 	float fov, asp, fp, bp;		// intrinsic
-	Object *follow;
+	Ladybug *follow;
 public:
 	Camera() {
 		asp = (float)windowWidth/windowHeight;
@@ -552,7 +552,7 @@ public:
 		geometry = _geometry;
 	}
 
-	void Draw(RenderState state) {
+	virtual void Draw(RenderState state) {
 		state.M = ScaleMatrix(scale) * RotationMatrix(rotationAngle, rotationAxis) * TranslateMatrix(translation);
 		state.Minv = TranslateMatrix(-translation) * RotationMatrix(-rotationAngle, rotationAxis) * ScaleMatrix(vec3(1 / scale.x, 1 / scale.y, 1 / scale.z));
 		state.MVP = state.M * state.V * state.P;
@@ -562,21 +562,32 @@ public:
 		geometry->Draw();
 	}
 
-	virtual void Animate(float tstart, float tend) {  }
+	virtual void Animate(float tend) {  }
 };
 
 struct Ladybug : public Object
 {
 	using Object::Object;
+	float distance = 4;
 	KleinBottle* kleinBottle;
 	Object* kleinBottle1;
-	virtual void Animate(float tstart, float tend) {
-		VertexData vd = kleinBottle->GenVertexData(tend*0.1*cosf(M_PI/4), tend*0.1*sinf(M_PI/4));
+	float angle = 0;
+	virtual void Animate(float tend) override final{
+		VertexData vd = kleinBottle->GenVertexData(tend*0.1*cosf(angle), tend*0.1*sinf(angle));
 		translation = vd.position * kleinBottle1->scale;
 		rotationAxis = cross(vd.normal, vec3(-1,0,0));
 		rotationAngle = acosf(dot(vd.normal, vec3(1, 0, 0)));
 		scale = vec3(0.25, 0.25, 0.25);
 		normal = vd.normal;
+	}
+	virtual void Draw(RenderState state) override final{
+		state.M = ScaleMatrix(scale) * RotationMatrix(-angle-M_PI/2, vec3(-1,0,0)) * RotationMatrix(rotationAngle, rotationAxis) * TranslateMatrix(translation);
+		state.Minv = TranslateMatrix(-translation) * RotationMatrix(-rotationAngle, rotationAxis) * RotationMatrix(angle+M_PI/2, vec3(-1,0,0)) *ScaleMatrix(vec3(1 / scale.x, 1 / scale.y, 1 / scale.z));
+		state.MVP = state.M * state.V * state.P;
+		state.material = material;
+		state.texture = texture;
+		shader->Bind(state);
+		geometry->Draw();
 	}
 
 };
@@ -585,6 +596,7 @@ struct Ladybug : public Object
 class Scene {
 //---------------------------
 	std::vector<Object *> objects;
+	Ladybug* ladybug;
 public:
 	Camera camera; // 3D camera
 	std::vector<Light> lights;
@@ -633,13 +645,14 @@ public:
 		diniSurface2->rotationAngle = acosf(dot(vd.normal, vec3(0, 0, 1)));
 		objects.push_back(diniSurface2);
 
-		Ladybug * ellipsoidObject1 = new Ladybug(nprShader, material0, ladyBugTexture, ellipsoid);
-		ellipsoidObject1->kleinBottle1 = kleinBottle1;
-		ellipsoidObject1->kleinBottle = kleinBottle;
-		objects.push_back(ellipsoidObject1);
+		ladybug = new Ladybug(nprShader, material0, ladyBugTexture, ellipsoid);
+		ladybug->distance = 4;
+		ladybug->kleinBottle1 = kleinBottle1;
+		ladybug->kleinBottle = kleinBottle;
+		objects.push_back(ladybug);
 
 		// Camera
-		camera.follow = ellipsoidObject1;
+		camera.follow = ladybug;
 		camera.wEye = vec3(0, 0, 6);
 		camera.wLookat = vec3(0, 0, 0);
 		camera.wVup = vec3(0, 1, 0);
@@ -661,10 +674,21 @@ public:
 		for (Object * obj : objects) obj->Draw(state);
 	}
 
-	void Animate(float tstart, float tend) {
+	void Animate(float tend) {
 		camera.Animate(tend);
 		for (int i = 0; i < lights.size(); i++) { lights[i].Animate(tend); }
-		for (int i = 0; i < objects.size(); i++) { objects[i]->Animate(0, tend); }
+		for (int i = 0; i < objects.size(); i++) { objects[i]->Animate(tend); }
+	}
+	void HandleKey(char key)
+	{
+		switch(key)
+		{
+			case 'a': ladybug->angle+=M_PI/8; break;
+			case 's': ladybug->angle-=M_PI/8; break;
+			case ' ': ladybug->distance=1.5;
+			default:
+			break;
+		}
 	}
 };
 
@@ -672,7 +696,7 @@ Scene scene;
 
 void Camera::Animate(float t) {
 	vec4 front = vec4(0, 1, 0, 1) * RotationMatrix(follow->rotationAngle, follow->rotationAxis);
-	wEye = follow->translation + follow->normal*4;
+	wEye = follow->translation + follow->normal*follow->distance;
 	wLookat = follow->translation;
 	wVup = follow->translation + vec3(front.x, front.y, front.z);
 }
@@ -694,7 +718,9 @@ void onDisplay() {
 }
 
 // Key of ASCII code pressed
-void onKeyboard(unsigned char key, int pX, int pY) { }
+void onKeyboard(unsigned char key, int pX, int pY) { 
+	scene.HandleKey(key);
+}
 
 // Key of ASCII code released
 void onKeyboardUp(unsigned char key, int pX, int pY) { }
@@ -715,7 +741,7 @@ void onIdle() {
 
 	for (float t = tstart; t < tend; t += dt) {
 		float Dt = fmin(dt, tend - t);
-		scene.Animate(t, t + Dt); 
+		scene.Animate(t + Dt); 
 	}
 	glutPostRedisplay();
 }
