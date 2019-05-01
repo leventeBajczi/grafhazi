@@ -9,7 +9,7 @@
 //=============================================================================================
 #include "framework.h"
 
-const int tessellationLevel = 50;
+const int tessellationLevel = 100;
 class Ladybug;
 
 //---------------------------
@@ -257,7 +257,7 @@ class PhongShader : public Shader {
 				vec3 H = normalize(L + V);
 				float cost = max(dot(N,L), 0), cosd = max(dot(N,H), 0);
 				// kd and ka are modulated by the texture
-				radiance += ka * lights[i].La + (kd * cost + material.ks * pow(cosd, material.shininess)) * lights[i].Le;
+				radiance += ka * lights[i].La + lights[i].Le * (kd + material.ks * pow(cosd, material.shininess)/(L+V)/(L+V)) * cost;	//symmetric
 			}
 			fragmentColor = vec4(radiance, 1);
 		}
@@ -479,18 +479,25 @@ public:
 		float U = 2 * M_PI * u;
 		float V = 2 * M_PI * v;
 		float a = 6 * cosf(U)*(1+sinf(U));
+		Clifford Ca = Cos(T(U))*(Sin(T(U))+1)*6;
 		float b = 16* sinf(U);
+		Clifford Cb = Sin(T(U)) * 16;
 		float c = 4 * (1-cosf(U)/2);
+		Clifford Cc = (Cos(T(U))*(-0.5f)+1)*4;
 
 		Clifford x = M_PI < U <= 2*M_PI ?
-			Cos(T(U))*(Sin(T(U))+1)*6 + (Cos(T(U))*-0.5f+1)*4*cosf(V+M_PI) :
-			Cos(T(U))*(Cos(T(U))*-0.5f+1)*4*cosf(V) + Cos(T(U))*(Sin(T(U))+1)*6;
+			Ca + Cc*cosf(V+M_PI) :
+			Ca + Cc*Cos(T(U))*cosf(V);
 		Clifford y = M_PI < U <= 2*M_PI ?
-			Sin(T(U)) * 16 :
-			Sin(T(U))*(Cos(T(U))*-0.5f+1)*4*cosf(V) + Sin(T(U)) * 16;
-		Clifford z = (Cos(T(U))*-0.5f+1)*4*sinf(V);
-		Clifford Vx = M_PI < U <= 2*M_PI ? Cos(T(V)+M_PI)*c + a : Cos(T(V))*c*cosf(U) + a;
-		Clifford Vy = M_PI < U <= 2*M_PI ? b : Cos(T(V))*c*sinf(U) + b;
+			Cb :
+			Cb + Cc*cosf(V)*Sin(T(U));
+		Clifford z = Cc*sinf(V);
+		Clifford Vx = M_PI < U <= 2*M_PI ?
+			Cos(T(V)+M_PI)*c + a :
+			Cos(T(V))*c*cosf(U) + a;
+		Clifford Vy = M_PI < U <= 2*M_PI ?
+			b :
+			Cos(T(V))*c*sinf(U) + b;
 		Clifford Vz = Sin(T(V))*c;	
 		vd.position = vec3(x.f, y.f, z.f);
 		if(x.f < minX) minX = x.f;
@@ -581,8 +588,8 @@ struct Ladybug : public Object
 		normal = vd.normal;
 	}
 	virtual void Draw(RenderState state) override final{
-		state.M = ScaleMatrix(scale) * RotationMatrix(-angle-M_PI/2, vec3(-1,0,0)) * RotationMatrix(rotationAngle, rotationAxis) * TranslateMatrix(translation);
-		state.Minv = TranslateMatrix(-translation) * RotationMatrix(-rotationAngle, rotationAxis) * RotationMatrix(angle+M_PI/2, vec3(-1,0,0)) *ScaleMatrix(vec3(1 / scale.x, 1 / scale.y, 1 / scale.z));
+		state.M = ScaleMatrix(scale) * RotationMatrix(angle+M_PI/2, vec3(-1,0,0)) * RotationMatrix(rotationAngle, rotationAxis) * TranslateMatrix(translation);
+		state.Minv = TranslateMatrix(-translation) * RotationMatrix(-rotationAngle, rotationAxis) * RotationMatrix(-angle-M_PI/2, vec3(-1,0,0)) *ScaleMatrix(vec3(1 / scale.x, 1 / scale.y, 1 / scale.z));
 		state.MVP = state.M * state.V * state.P;
 		state.material = material;
 		state.texture = texture;
