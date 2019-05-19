@@ -31,8 +31,8 @@
 // Tudomasul veszem, hogy a forrasmegjeloles kotelmenek megsertese eseten a hazifeladatra adhato pontokat
 // negativ elojellel szamoljak el es ezzel parhuzamosan eljaras is indul velem szemben.
 //=============================================================================================
-
-
+ 
+ 
 //forrasmegjeloles: A kod alapjakent a
 //http://cg.iit.bme.hu/portal/sites/default/files/oktatott%20t%C3%A1rgyak/sz%C3%A1m%C3%ADt%C3%B3g%C3%A9pes%20grafika/inkrement%C3%A1lis%203d%20k%C3%A9pszint%C3%A9zis/3dendzsinke.cpp
 //linken megtalalhato peldaprogram szolgalt. Ez nem tudom beleszamit-e a targy
@@ -41,7 +41,7 @@
 //a targy diasoran (ami viszont biztosan kivul esik a forrasmegjeloles szuksegessegen).
  
 #include "framework.h"
-
+ 
 const int tessellationLevel = 100;
 class Ladybug;
 struct Camera {
@@ -71,44 +71,44 @@ public:
 	}
 	void Animate(float t);
 };
-
+ 
 struct Material {
 	vec3 kd, ks, ka;
 	float shininess;
-
+ 
 	void SetUniform(unsigned shaderProg, char * name) {
 		char buffer[256];
 		sprintf(buffer, "%s.kd", name);
 		kd.SetUniform(shaderProg, buffer);
-
+ 
 		sprintf(buffer, "%s.ks", name);
 		ks.SetUniform(shaderProg, buffer);
-
+ 
 		sprintf(buffer, "%s.ka", name);
 		ka.SetUniform(shaderProg, buffer);
-
+ 
 		sprintf(buffer, "%s.shininess", name);
 		int location = glGetUniformLocation(shaderProg, buffer);
 		if (location >= 0) glUniform1f(location, shininess); else printf("uniform shininess cannot be set\n");
 	}
 };
-
+ 
 float lengthsq(const vec4& obj)
 {
 	return obj.x*obj.x+obj.y*obj.y+obj.z*obj.z+obj.w*obj.w;
 }
-
+ 
 vec4 invert(const vec4& obj)
 {
 	return vec4{obj.x, -obj.y, -obj.z, -obj.w}/lengthsq(obj);
 }
-
+ 
 struct Light {
 	vec3 La, Le;
 	vec4 wLightPos;
 	vec4 wLightPos_original;
 	vec4 center;
-
+ 
 	void Animate(float t) {
 		vec4 quaternion{
 			cosf(t/4),
@@ -119,20 +119,20 @@ struct Light {
 		light = quaternion * light * invert(quaternion);
 		wLightPos = vec4{light.y, light.z, light.w, 0} + center;
 	}
-
+ 
 	void SetUniform(unsigned shaderProg, char * name) {
 		char buffer[256];
 		sprintf(buffer, "%s.La", name);
 		La.SetUniform(shaderProg, buffer);
-
+ 
 		sprintf(buffer, "%s.Le", name);
 		Le.SetUniform(shaderProg, buffer);
-
+ 
 		sprintf(buffer, "%s.wLightPos", name);
 		wLightPos.SetUniform(shaderProg, buffer);
 	}
 };
-
+ 
 struct CheckerBoardTexture : public Texture {
 	CheckerBoardTexture(const int width = 0, const int height = 0) : Texture() {
 		glBindTexture(GL_TEXTURE_2D, textureId);
@@ -146,7 +146,7 @@ struct CheckerBoardTexture : public Texture {
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	}
 };
-
+ 
 struct DiniTexture : public Texture {
 	DiniTexture(const int width = 0, const int height = 0) : Texture() {
 		glBindTexture(GL_TEXTURE_2D, textureId);
@@ -185,37 +185,37 @@ struct RenderState {
 	Texture *          texture;
 	vec3	           wEye;
 };
-
+ 
 class Shader : public GPUProgram {
 public:
 	virtual void Bind(RenderState state) = 0;
 };
-
-
+ 
+ 
 class PhongShader : public Shader {
 	const char * vertexSource = R"(
 		#version 330
 		precision highp float;
-
+ 
 		struct Light {
 			vec3 La, Le;
 			vec4 wLightPos;
 		};
-
+ 
 		uniform mat4  MVP, M, Minv;
 		uniform Light[8] lights;
 		uniform int   nLights;
 		uniform vec3  wEye;
-
+ 
 		layout(location = 0) in vec3  vtxPos;
 		layout(location = 1) in vec3  vtxNorm;
 		layout(location = 2) in vec2  vtxUV;
-
+ 
 		out vec3 wNormal;
 		out vec3 wView;
 		out vec3 wLight[8];
 		out vec2 texcoord;
-
+ 
 		void main() {
 			gl_Position = vec4(vtxPos, 1) * MVP;
 			vec4 wPos = vec4(vtxPos, 1) * M;
@@ -227,33 +227,33 @@ class PhongShader : public Shader {
 		    texcoord = vtxUV;
 		}
 	)";
-
+ 
 	const char * fragmentSource = R"(
 		#version 330
 		precision highp float;
-
+ 
 		struct Light {
 			vec3 La, Le;
 			vec4 wLightPos;
 		};
-
+ 
 		struct Material {
 			vec3 kd, ks, ka;
 			float shininess;
 		};
-
+ 
 		uniform Material material;
 		uniform Light[8] lights; 
 		uniform int   nLights;
 		uniform sampler2D diffuseTexture;
-
+ 
 		in  vec3 wNormal;
 		in  vec3 wView;
 		in  vec3 wLight[8];
 		in  vec2 texcoord;
 		
         out vec4 fragmentColor;
-
+ 
 		void main() {
 			vec3 N = normalize(wNormal);
 			vec3 V = normalize(wView); 
@@ -261,7 +261,7 @@ class PhongShader : public Shader {
 			vec3 texColor = texture(diffuseTexture, texcoord).rgb;
 			vec3 ka = material.ka * texColor;
 			vec3 kd = material.kd * texColor;
-
+ 
 			vec3 radiance = vec3(0, 0, 0);
 			for(int i = 0; i < nLights; i++) {
 				vec3 L = normalize(wLight[i]);
@@ -274,7 +274,7 @@ class PhongShader : public Shader {
 	)";
 public:
 	PhongShader() { Create(vertexSource, fragmentSource, "fragmentColor"); }
-
+ 
 	void Bind(RenderState state) {
 		glUseProgram(getId());
 		state.MVP.SetUniform(getId(), "MVP");
@@ -282,7 +282,7 @@ public:
 		state.Minv.SetUniform(getId(), "Minv");
 		state.wEye.SetUniform(getId(), "wEye");
 		state.material->SetUniform(getId(), "material");
-
+ 
 		int location = glGetUniformLocation(getId(), "nLights");
 		if (location >= 0) glUniform1i(location, state.lights.size()); else printf("uniform nLight cannot be set\n");
 		for (int i = 0; i < state.lights.size(); i++) {
@@ -293,23 +293,23 @@ public:
 		state.texture->SetUniform(getId(), "diffuseTexture");
 	}
 };
-
+ 
 class NPRShader : public Shader {
 	const char * vertexSource = R"(
 		#version 330
 		precision highp float;
-
+ 
 		uniform mat4  MVP, M, Minv; 
 		uniform	vec4  wLightPos;
 		uniform vec3  wEye;         
-
+ 
 		layout(location = 0) in vec3  vtxPos; 
 		layout(location = 1) in vec3  vtxNorm;
 		layout(location = 2) in vec2  vtxUV;
-
+ 
 		out vec3 wNormal, wView, wLight;
 		out vec2 texcoord;
-
+ 
 		void main() {
 		   gl_Position = vec4(vtxPos, 1) * MVP;
 		   vec4 wPos = vec4(vtxPos, 1) * M;
@@ -319,17 +319,17 @@ class NPRShader : public Shader {
 		   texcoord = vtxUV;
 		}
 	)";
-
+ 
 	const char * fragmentSource = R"(
 		#version 330
 		precision highp float;
-
+ 
 		uniform sampler2D diffuseTexture;
-
+ 
 		in  vec3 wNormal, wView, wLight;	
 		in  vec2 texcoord;
 		out vec4 fragmentColor;    			
-
+ 
 		void main() {
 		   vec3 N = normalize(wNormal), V = normalize(wView), L = normalize(wLight);
 		   float y = (dot(N, L) > 0.5) ? 1 : 0.5;
@@ -339,7 +339,7 @@ class NPRShader : public Shader {
 	)";
 public:
 	NPRShader() { Create(vertexSource, fragmentSource, "fragmentColor"); }
-
+ 
 	void Bind(RenderState state) {
 		glUseProgram(getId()); 		
 		state.MVP.SetUniform(getId(), "MVP");
@@ -347,11 +347,11 @@ public:
 		state.Minv.SetUniform(getId(), "Minv");
 		state.wEye.SetUniform(getId(), "wEye");
 		state.lights[0].wLightPos.SetUniform(getId(), "wLightPos");
-
+ 
 		state.texture->SetUniform(getId(), "diffuseTexture");
 	}
 };
-
+ 
 struct VertexData {
 	vec3 position, normal;
 	vec2 texcoord;
@@ -366,7 +366,7 @@ public:
 	}
 	virtual void Draw() = 0;
 };
-
+ 
 class ParamSurface : public Geometry {
 	unsigned int nVtxPerStrip, nStrips;
 public:
@@ -374,7 +374,7 @@ public:
 		nVtxPerStrip = nStrips = 0;
 	}
 	virtual VertexData GenVertexData(float u, float v) = 0;
-
+ 
 	void Create(int N = tessellationLevel, int M = tessellationLevel) {
 		unsigned int vbo;
 		glGenBuffers(1, &vbo);
@@ -401,7 +401,7 @@ public:
 		for (int i = 0; i < nStrips; i++) glDrawArrays(GL_TRIANGLE_STRIP, i *  nVtxPerStrip, nVtxPerStrip);
 	}
 };
-
+ 
 struct Clifford {
 	float f, d;
 	Clifford(float f0 = 0, float d0 = 0) { f = f0, d = d0; }
@@ -413,7 +413,7 @@ struct Clifford {
 		return (*this) * Clifford(r.f / l, -r.d / l);
 	}
 };
-
+ 
 Clifford T(float t) { return Clifford(t, 1); }
 Clifford Sin(Clifford g) { return Clifford(sin(g.f), cos(g.f) * g.d); }
 Clifford Cos(Clifford g) { return Clifford(cos(g.f), -sin(g.f) * g.d); }
@@ -421,13 +421,13 @@ Clifford Tan(Clifford g) { return Sin(g) / Cos(g); }
 Clifford Log(Clifford g) { return Clifford(logf(g.f), 1 / g.f * g.d); }
 Clifford Exp(Clifford g) { return Clifford(expf(g.f), expf(g.f) * g.d); }
 Clifford Pow(Clifford g, float n) { return Clifford(powf(g.f, n), n * powf(g.f, n - 1) * g.d); }
-
+ 
 class Ellipsoid : public ParamSurface {
 private:
 	vec3 params{0.5,0.5,0.75};
 public:
 	Ellipsoid() { Create(); }
-
+ 
 	VertexData GenVertexData(float u, float v) {
 		VertexData vd;
 		float U = u * 2.0f * M_PI - M_PI;
@@ -451,7 +451,7 @@ public:
 		return vd;
 	}
 };
-
+ 
 class KleinBottle : public ParamSurface {
 	float minX = 0, minY = 0, minZ = 0,
 		  maxX = 0, maxY = 0, maxZ = 0;
@@ -465,7 +465,7 @@ public:
 			0);
 	}
 	KleinBottle() { Create(); }
-
+ 
 	VertexData GenVertexData(float u, float v) {
 		VertexData vd;
 		float U = 2 * M_PI * u;
@@ -476,18 +476,18 @@ public:
 		Clifford Cb = Sin(T(U)) * 16;
 		float c = 4 * (1-cosf(U)/2);
 		Clifford Cc = (Cos(T(U))*(-0.5f)+1)*4;
-
-		Clifford x = M_PI < U <= 2*M_PI ?
+ 
+		Clifford x = M_PI < U  && U <= 2*M_PI ?
 			Ca + Cc*cosf(V+M_PI) :
 			Ca + Cc*Cos(T(U))*cosf(V);
-		Clifford y = M_PI < U <= 2*M_PI ?
+		Clifford y = M_PI < U  && U <= 2*M_PI ?
 			Cb :
 			Cb + Cc*cosf(V)*Sin(T(U));
 		Clifford z = Cc*sinf(V);
-		Clifford Vx = M_PI < U <= 2*M_PI ?
+		Clifford Vx = M_PI < U  && U <= 2*M_PI ?
 			Cos(T(V)+M_PI)*c + a :
 			Cos(T(V))*c*cosf(U) + a;
-		Clifford Vy = M_PI < U <= 2*M_PI ?
+		Clifford Vy = M_PI < U  && U <= 2*M_PI ?
 			b :
 			Cos(T(V))*c*sinf(U) + b;
 		Clifford Vz = Sin(T(V))*c;	
@@ -505,14 +505,14 @@ public:
 		return vd;
 	}
 };
-
+ 
 class DiniSurface : public ParamSurface {
 private:
 	float a = 1;
 	float b = 0.15;
 public:
 	DiniSurface() { Create(); }
-
+ 
 	VertexData GenVertexData(float u, float v) {
 		VertexData vd;
 		float U = 4 * M_PI * u;
@@ -531,7 +531,7 @@ public:
 		return vd;
 	}
 };
-
+ 
 struct Object {
 	Shader * shader;
 	Material * material;
@@ -547,7 +547,7 @@ public:
 		material = _material;
 		geometry = _geometry;
 	}
-
+ 
 	virtual void Draw(RenderState state) {
 		state.M = ScaleMatrix(scale) * RotationMatrix(rotationAngle, rotationAxis) * TranslateMatrix(translation);
 		state.Minv = TranslateMatrix(-translation) * RotationMatrix(-rotationAngle, rotationAxis) * ScaleMatrix(vec3(1 / scale.x, 1 / scale.y, 1 / scale.z));
@@ -557,19 +557,20 @@ public:
 		shader->Bind(state);
 		geometry->Draw();
 	}
-
+ 
 	virtual void Animate(float tend) {  }
 };
-
+ 
 struct Ladybug : public Object
 {
 	Ladybug(Shader * _shader, Material * _material, Texture * _texture, Geometry * _geometry) :
 	Object(_shader, _material, _texture, _geometry) {}
+	
 	float distance = 4;
 	KleinBottle* kleinBottle;
 	Object* kleinBottle1;
 	float angle = 0;
-	float lastU = 0, lastV = 0, tlast = 0;
+	float lastU = 0.5, lastV = 0, tlast = 0;
 	virtual void Animate(float tend) override final{
 		float deltaU = (tend-tlast)*0.1*cosf(angle);
 		while(lastU + deltaU > 1){ lastU -= 0.5f; deltaU -= 0.5f;}
@@ -592,41 +593,41 @@ struct Ladybug : public Object
 		shader->Bind(state);
 		geometry->Draw();
 	}
-
+ 
 };
-
+ 
 class Scene {
 	std::vector<Object *> objects;
 	Ladybug* ladybug;
 public:
 	Camera camera;
 	std::vector<Light> lights;
-
+ 
 	void Build() {
 		Shader * phongShader = new PhongShader();
 		Shader * nprShader = new NPRShader();
-
+ 
 		Material * material0 = new Material;
 		material0->kd = vec3(0.6f, 0.4f, 0.2f);
 		material0->ks = vec3(4, 4, 4);
 		material0->ka = vec3(0.1f, 0.1f, 0.1f);
 		material0->shininess = 100;
-
+ 
 		Texture * texture15x20 = new CheckerBoardTexture(15, 20);
 		Texture * diniTexture = new DiniTexture(25, 25);
 		Texture * ladyBugTexture = new LadyBugTexture(25, 25);
-
+ 
 		Geometry * ellipsoid = new Ellipsoid();
 		KleinBottle * kleinBottle = new KleinBottle();
 		Geometry * diniSurface = new DiniSurface();
-
-
+ 
+ 
 		Object * kleinBottle1 = new Object(phongShader, material0, texture15x20, kleinBottle);
 		kleinBottle1->translation = vec3(0, 0, 0);
 		kleinBottle1->rotationAxis = vec3(0, 3, 0);
 		kleinBottle1->scale = vec3(0.1, 0.1, 0.1);
 		objects.push_back(kleinBottle1);
-
+ 
 		Object * diniSurface1 = new Object(phongShader, material0, diniTexture, diniSurface);
 		diniSurface1->scale = vec3(0.15, 0.15, 0.15);
 		VertexData vd = kleinBottle->GenVertexData(0.25, 0.75);
@@ -642,24 +643,24 @@ public:
 		diniSurface2->rotationAxis = cross(vec3(0,0,1),vd.normal);
 		diniSurface2->rotationAngle = acosf(dot(vd.normal, vec3(0, 0, 1)));
 		objects.push_back(diniSurface2);
-
+ 
 		ladybug = new Ladybug(nprShader, material0, ladyBugTexture, ellipsoid);
 		ladybug->distance = 3;
 		ladybug->kleinBottle1 = kleinBottle1;
 		ladybug->kleinBottle = kleinBottle;
 		objects.push_back(ladybug);
-
+ 
 		camera.follow = ladybug;
 		camera.wEye = vec3(0, 0, 6);
 		camera.wLookat = vec3(0, 0, 0);
 		camera.wVup = vec3(0, 1, 0);
-
+ 
 		lights.resize(1);
 		lights[0].wLightPos_original = vec4(10, 10, 10, 0);
 		lights[0].La = vec3(1, 1, 1);
 		lights[0].Le = vec3(3, 3, 3);
 		lights[0].center = kleinBottle->getAABBCenter();
-
+ 
 	}
 	void Render() {
 		RenderState state;
@@ -669,7 +670,7 @@ public:
 		state.lights = lights;
 		for (Object * obj : objects) obj->Draw(state);
 	}
-
+ 
 	void Animate(float tend) {
 		camera.Animate(tend);
 		for (int i = 0; i < lights.size(); i++) { lights[i].Animate(tend); }
@@ -687,9 +688,9 @@ public:
 		}
 	}
 };
-
+ 
 Scene scene;
-
+ 
 void Camera::Animate(float t) {
 	vec4 front = vec4(sinf(follow->angle)*follow->distance, cosf(follow->angle)*follow->distance, 0, 1) * RotationMatrix(follow->rotationAngle, follow->rotationAxis);
 	wEye = follow->translation + follow->normal*follow->distance;
@@ -703,31 +704,31 @@ void onInitialization() {
 	glDisable(GL_CULL_FACE);
 	scene.Build();
 }
-
+ 
 void onDisplay() {
 	glClearColor(0.5f, 0.5f, 0.8f, 1.0f);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	scene.Render();
 	glutSwapBuffers();
 }
-
+ 
 void onKeyboard(unsigned char key, int pX, int pY) { 
 	scene.HandleKey(key);
 }
-
+ 
 void onKeyboardUp(unsigned char key, int pX, int pY) { }
-
+ 
 void onMouse(int button, int state, int pX, int pY) { }
-
+ 
 void onMouseMotion(int pX, int pY) {
 }
-
+ 
 void onIdle() {
 	static float tend = 0;
 	const float dt = 0.1;
 	float tstart = tend;
 	tend = glutGet(GLUT_ELAPSED_TIME) / 1000.0f;
-
+ 
 	for (float t = tstart; t < tend; t += dt) {
 		float Dt = fmin(dt, tend - t);
 		scene.Animate(t + Dt); 
